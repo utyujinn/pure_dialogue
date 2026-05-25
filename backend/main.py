@@ -205,9 +205,6 @@ def decode_webm(webm_bytes: bytes) -> np.ndarray:
 _WHISPER_HALLUCINATIONS = frozenset([
     "ご視聴ありがとうございました",
     "チャンネル登録よろしくお願いします",
-    "ありがとうございました",
-    "お疲れ様でした",
-    "ん",
 ])
 
 def run_whisper(pcm: np.ndarray) -> str:
