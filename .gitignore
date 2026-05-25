@@ -1,1 +1,22 @@
 phone
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# Build / tools
+.serena/
+
+# Assets (large files / personal data)
+assets/model.vrm
+assets/model.wav
+assets/*.Zone.Identifier
+
+# IrodoriTTS clone (external repo)
+Irodori-TTS/
+
+# Misc
+blueprint.md
+CLAUDE.md
