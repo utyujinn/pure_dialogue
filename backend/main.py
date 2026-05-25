@@ -342,10 +342,11 @@ async def stream_llm_and_tts(
     return full_response
 
 
-# ── 接続レジストリ ────────────────────────────────────────────────
+# ── 接続レジストリ / 通話状態 ─────────────────────────────────────
 
-# ws → per-connection state（tts_engine, speaker を中継時に参照するため外部から見える）
 _connections: dict["WebSocket", dict] = {}
+_call_requester: "WebSocket | None" = None   # 通話リクエスト中の接続
+_in_call: set["WebSocket"] = set()           # 通話中の接続
 
 
 async def _broadcast_mode() -> None:
@@ -368,13 +369,23 @@ async def _relay_to_peers(
     if not peers:
         return
     wav = await synthesize(transcript, sender_state["tts"], loop, sender_state["speaker"])
+    username = sender_state.get("username", "")
     for peer_ws, _ in peers:
         try:
-            await peer_ws.send_json({"type": "peer_text", "text": transcript})
+            await peer_ws.send_json({"type": "peer_text", "text": transcript, "from": username})
             if wav:
                 await peer_ws.send_bytes(wav)
         except Exception as e:
             log.warning("relay to peer failed: %s", e)
+
+
+async def _call_broadcast(msg: dict, exclude: "WebSocket | None" = None) -> None:
+    for cws in list(_in_call):
+        if cws is not exclude:
+            try:
+                await cws.send_json(msg)
+            except Exception:
+                pass
 
 
 # ── WebSocket ─────────────────────────────────────────────────────
@@ -389,6 +400,7 @@ async def websocket_handler(ws: WebSocket):
         "tts":      "voicevox",
         "model":    OLLAMA_MODEL_DEFAULT,
         "speaker":  VOICEVOX_SPEAKER,
+        "username": "",
     }
     history   = [{"role": "system", "content": build_system_prompt(state["persona"], state["affinity"])}]
     audio_buf = bytearray()
@@ -404,7 +416,16 @@ async def websocket_handler(ws: WebSocket):
                 break
 
             if msg.get("bytes"):
-                audio_buf.extend(msg["bytes"])
+                if ws in _in_call and len(_in_call) >= 2:
+                    # 通話中: バッファせず即時転送
+                    for cws in list(_in_call):
+                        if cws is not ws:
+                            try:
+                                await cws.send_bytes(msg["bytes"])
+                            except Exception:
+                                pass
+                else:
+                    audio_buf.extend(msg["bytes"])
                 continue
 
             data = json.loads(msg.get("text", "{}"))
@@ -440,6 +461,54 @@ async def websocket_handler(ws: WebSocket):
                     log.info("persona → %s", pid)
                 continue
 
+            if t == "set_username":
+                state["username"] = data.get("username", "")[:20]
+                log.info("username → %r", state["username"])
+                continue
+
+            if t == "call_request":
+                global _call_requester
+                _call_requester = ws
+                name = state.get("username", "相手")
+                for peer_ws in list(_connections):
+                    if peer_ws is not ws:
+                        try:
+                            await peer_ws.send_json({"type": "call_request", "from": name})
+                        except Exception:
+                            pass
+                log.info("call_request from %r", name)
+                continue
+
+            if t == "call_accept":
+                if _call_requester and _call_requester in _connections:
+                    _in_call.add(ws)
+                    _in_call.add(_call_requester)
+                    _call_requester = None
+                    await _call_broadcast({"type": "call_start"})
+                    log.info("call started: %d users", len(_in_call))
+                continue
+
+            if t == "call_decline":
+                if _call_requester:
+                    try:
+                        await _call_requester.send_json({"type": "call_declined"})
+                    except Exception:
+                        pass
+                    _call_requester = None
+                continue
+
+            if t == "call_end":
+                audio_buf.clear()            # 通話中の PCM 混入データを破棄
+                _in_call.discard(ws)
+                await _call_broadcast({"type": "call_end"})
+                await ws.send_json({"type": "call_end"})  # 送信者自身にも通知
+                log.info("call ended by %r", state.get("username"))
+                continue
+
+            if t == "flush_audio_buf":
+                audio_buf.clear()
+                continue
+
             if t != "end_speech":
                 continue
 
@@ -449,8 +518,16 @@ async def websocket_handler(ws: WebSocket):
 
             log.info("end_speech: %d bytes", len(audio_buf))
             try:
-                pcm = await loop.run_in_executor(None, decode_webm, bytes(audio_buf))
+                raw_audio = bytes(audio_buf)
                 audio_buf.clear()
+
+                # ── 通話中の end_speech は無視（チャンクは既に即時転送済み）
+                if ws in _in_call and len(_in_call) >= 2:
+                    audio_buf.clear()
+                    await ws.send_json({"type": "done"})
+                    continue
+
+                pcm = await loop.run_in_executor(None, decode_webm, raw_audio)
                 log.info("PCM: %d samples (%.2fs)", pcm.size, pcm.size / 16000)
 
                 transcript = await loop.run_in_executor(None, run_whisper, pcm)
@@ -460,10 +537,10 @@ async def websocket_handler(ws: WebSocket):
                     await ws.send_json({"type": "done"})
                     continue
 
-                await ws.send_json({"type": "transcript", "text": transcript})
+                await ws.send_json({"type": "transcript", "text": transcript, "from": state.get("username", "")})
 
                 if len(_connections) >= 2:
-                    # ── human-to-human モード ──────────────────────
+                    # ── テキスト中継モード ─────────────────────────
                     await ws.send_json({"type": "done"})
                     await _relay_to_peers(ws, transcript, state, loop)
                 else:
@@ -491,4 +568,8 @@ async def websocket_handler(ws: WebSocket):
         pass
     finally:
         _connections.pop(ws, None)
+        _in_call.discard(ws)
+        if _call_requester is ws:
+            globals()["_call_requester"] = None
+        await _call_broadcast({"type": "call_end"})
         await _broadcast_mode()

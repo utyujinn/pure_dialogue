@@ -84,6 +84,52 @@ canvas#canvas { display: block; }
 #micBtn.listening { background: #e04040; }
 #micBtn.processing { background: #666; cursor: default; }
 
+/* 通話ボタン */
+#callBtn {
+  position: fixed;
+  bottom: 24px; right: 100px;
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0,180,80,0.85);
+  color: #fff;
+  font-size: 22px;
+  cursor: pointer;
+  display: none;
+  transition: background 0.2s, transform 0.1s;
+}
+#callBtn:active { transform: scale(0.93); }
+#callBtn.incall { background: #e04040; }
+
+/* 通話リクエスト通知 */
+#callNotify {
+  position: fixed;
+  top: 80px; left: 50%;
+  transform: translateX(-50%);
+  background: rgba(10,20,50,0.95);
+  border: 1px solid rgba(0,220,120,0.5);
+  border-radius: 14px;
+  padding: 16px 24px;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  z-index: 100;
+  backdrop-filter: blur(8px);
+}
+#callNotify p { font-size: 15px; text-align: center; }
+#callNotify .btn-row { display: flex; gap: 10px; }
+#callNotify button {
+  padding: 7px 20px;
+  border-radius: 20px;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  font-weight: bold;
+}
+#callAcceptBtn { background: #22cc66; color: #fff; }
+#callDeclineBtn { background: #cc3333; color: #fff; }
+
 #status {
   position: fixed;
   top: 46px; left: 50%;
@@ -267,6 +313,11 @@ select.panel-select option {
 <!-- 設定パネル -->
 <div id="settingsPanel">
   <div class="setting-group">
+    <label>ユーザー名</label>
+    <input id="usernameInput" class="panel-select" type="text" maxlength="20"
+      placeholder="名前を入力..." style="cursor:text;">
+  </div>
+  <div class="setting-group">
     <label>ペルソナ</label>
     <select id="personaSelect" class="panel-select">
       <option value="">読み込み中...</option>
@@ -301,7 +352,16 @@ select.panel-select option {
   </div>
 </div>
 
+<button id="callBtn" title="通話リクエスト">&#9742;</button>
 <button id="micBtn" title="クリックして話す">🎤</button>
+
+<div id="callNotify">
+  <p id="callNotifyText">通話リクエストが届いています</p>
+  <div class="btn-row">
+    <button id="callAcceptBtn">承認</button>
+    <button id="callDeclineBtn">拒否</button>
+  </div>
+</div>
 
 <script type="importmap">
 {
@@ -499,8 +559,14 @@ analyser.fftSize = 256;
 analyser.connect(audioCtx.destination);
 const timeDomain = new Float32Array(analyser.fftSize);
 // ブラウザのautoplay制限を解除：最初のユーザー操作で再開
-document.addEventListener('click',     () => audioCtx.state === 'suspended' && audioCtx.resume(), { capture: true });
-document.addEventListener('touchstart', () => audioCtx.state === 'suspended' && audioCtx.resume(), { capture: true });
+document.addEventListener('click', () => {
+  audioCtx.state === 'suspended' && audioCtx.resume();
+  if (callAudioCtx && callAudioCtx.state === 'suspended') callAudioCtx.resume();
+}, { capture: true });
+document.addEventListener('touchstart', () => {
+  audioCtx.state === 'suspended' && audioCtx.resume();
+  if (callAudioCtx && callAudioCtx.state === 'suspended') callAudioCtx.resume();
+}, { capture: true });
 
 const audioQueue = [];
 let isPlaying = false;
@@ -508,13 +574,17 @@ let isPlaying = false;
 function playNext() {
   if (!audioQueue.length) { isPlaying = false; return; }
   isPlaying = true;
-  audioCtx.decodeAudioData(audioQueue.shift(), buf => {
-    const src = audioCtx.createBufferSource();
-    src.buffer = buf;
-    src.connect(analyser);
-    src.start();
-    src.onended = playNext;
-  });
+  audioCtx.decodeAudioData(
+    audioQueue.shift(),
+    buf => {
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf;
+      src.connect(analyser);
+      src.start();
+      src.onended = playNext;
+    },
+    () => playNext()  // デコード失敗（通話後の残留 PCM 等）はスキップして次へ
+  );
 }
 
 function enqueueWav(arrayBuffer) {
@@ -704,7 +774,8 @@ function setCookie(name, value, days = 365) {
   document.cookie = `${name}=${encodeURIComponent(value)};expires=${d.toUTCString()};path=/`;
 }
 
-let affinity = Math.min(100, Math.max(0, parseInt(getCookie('affinity') ?? '50')));
+let affinity  = Math.min(100, Math.max(0, parseInt(getCookie('affinity') ?? '50')));
+let myName    = getCookie('username') ?? '';
 
 const affinityFill = document.getElementById('affinity-fill');
 
@@ -738,6 +809,59 @@ function spawnAffinityParticles() {
   affinityFill.classList.add('affinity-up');
 }
 
+// ── 通話音声 (Web Audio API — 生 PCM タイムスタンプ連結再生) ────────
+
+let isInCall     = false;
+let callAudioCtx = null;
+let nextPlayTime = 0;
+const CALL_SAMPLE_RATE = 48000; // 送受信共通レート
+
+function initCallAudio() {
+  // ボタンクリック（ユーザージェスチャ）で preinitCallAudio() が先に呼ばれている場合は再利用
+  if (!callAudioCtx || callAudioCtx.state === 'closed') {
+    callAudioCtx = new AudioContext({ sampleRate: CALL_SAMPLE_RATE });
+    nextPlayTime = 0;
+  }
+  callAudioCtx.resume().catch(() => {});
+}
+
+// ユーザージェスチャ内で呼ぶ：モバイルの autoplay 制限を回避するため事前にコンテキストを作成
+function preinitCallAudio() {
+  if (!callAudioCtx || callAudioCtx.state === 'closed') {
+    callAudioCtx = new AudioContext({ sampleRate: CALL_SAMPLE_RATE });
+    nextPlayTime = 0;
+  }
+  callAudioCtx.resume().catch(() => {});
+}
+
+function enqueuePcmChunk(arrayBuffer) {
+  if (!callAudioCtx) return;
+  if (callAudioCtx.state === 'suspended') callAudioCtx.resume();
+  const pcm = new Float32Array(arrayBuffer);
+  if (!pcm.length) return;
+  const buf = callAudioCtx.createBuffer(1, pcm.length, CALL_SAMPLE_RATE);
+  buf.copyToChannel(pcm, 0);
+  const src = callAudioCtx.createBufferSource();
+  src.buffer = buf;
+  src.connect(callAudioCtx.destination);
+  const now = callAudioCtx.currentTime;
+  // スケジュールが遅れていたらリセット（ネットワーク遅延吸収バッファ 50ms）
+  if (nextPlayTime < now) nextPlayTime = now + 0.05;
+  src.start(nextPlayTime);
+  nextPlayTime += buf.duration;
+}
+
+function teardownCallAudio() {
+  // 通話終了直後に届く残留 PCM チャンクが WAV キューを汚さないよう先にクリア
+  audioQueue.length = 0;
+  isPlaying = false;
+  if (callAudioCtx && callAudioCtx.state !== 'closed') {
+    callAudioCtx.close();
+  }
+  callAudioCtx = null;
+  nextPlayTime  = 0;
+}
+
 // ── WebSocket ────────────────────────────────────────────────────
 
 const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -747,6 +871,7 @@ ws.onopen = () => {
   if (speakerSelect.value)
     ws.send(JSON.stringify({ type: 'set_speaker', speaker: parseInt(speakerSelect.value) }));
   ws.send(JSON.stringify({ type: 'set_affinity', value: affinity }));
+  if (myName) ws.send(JSON.stringify({ type: 'set_username', username: myName }));
 };
 
 const transcriptEl = document.getElementById('transcript');
@@ -757,29 +882,76 @@ const micSelect    = document.getElementById('micSelect');
 
 ws.onmessage = e => {
   if (e.data instanceof ArrayBuffer) {
-    enqueueWav(e.data);
+    if (isInCall) {
+      enqueuePcmChunk(e.data);
+    } else {
+      enqueueWav(e.data);
+    }
     return;
   }
   const msg = JSON.parse(e.data);
-  const modeIndicator = document.getElementById('modeIndicator');
-  const modeText      = document.getElementById('modeText');
+  const modeIndicator  = document.getElementById('modeIndicator');
+  const modeText       = document.getElementById('modeText');
+  const callBtn        = document.getElementById('callBtn');
+  const callNotify     = document.getElementById('callNotify');
+  const callNotifyText = document.getElementById('callNotifyText');
 
   if (msg.type === 'transcript') {
-    transcriptEl.textContent = `あなた: ${msg.text}`;
-    // AI モードのときだけ responseEl をリセット（human では peer_text が入る）
+    const label = msg.from ? msg.from : (myName || 'あなた');
+    transcriptEl.textContent = `${label}: ${msg.text}`;
     if (!modeIndicator.classList.contains('human'))
       responseEl.textContent = 'AI: ';
   } else if (msg.type === 'llm_text') {
     responseEl.textContent += msg.text;
   } else if (msg.type === 'peer_text') {
-    responseEl.textContent = `相手: ${msg.text}`;
+    const label = msg.from || '相手';
+    responseEl.textContent = `${label}: ${msg.text}`;
   } else if (msg.type === 'mode') {
     const isHuman = msg.mode === 'human';
     modeIndicator.classList.toggle('human', isHuman);
-    modeText.textContent = isHuman ? `通話中 (${msg.users}人)` : 'AI';
-    if (isHuman) {
-      statusEl.textContent = '相手と接続しました';
+    modeText.textContent = isHuman ? `接続中 (${msg.users}人)` : 'AI';
+    callBtn.style.display = isHuman ? 'block' : 'none';
+    if (!isHuman) {
+      callBtn.classList.remove('incall');
+      callNotify.style.display = 'none';
     }
+  } else if (msg.type === 'call_request') {
+    const from = msg.from || '相手';
+    callNotifyText.textContent = `${from} さんから音声通話のリクエストがあります`;
+    callNotify.style.display = 'flex';
+  } else if (msg.type === 'call_start') {
+    callNotify.style.display = 'none';
+    callBtn.classList.add('incall');
+    callBtn.title = '通話終了';
+    modeText.textContent = '音声通話中';
+    statusEl.textContent = '音声通話中';
+    isInCall = true;
+    initCallAudio();
+  } else if (msg.type === 'call_end') {
+    callBtn.classList.remove('incall');
+    callBtn.title = '通話リクエスト';
+    statusEl.textContent = '話しかけてください（自動検知）';
+    isInCall = false;
+    teardownCallAudio();
+    // MediaRecorder を再起動してクリーンな EBML ヘッダーを作り直す
+    // （通話中に蓄積された続きクャンクが audio_buf に入ると decode_webm が壊れる）
+    if (mediaRecorder) {
+      mediaRecorder.onstop = () => {
+        // final chunk 送信後にバックエンドの audio_buf もクリア
+        if (ws.readyState === WebSocket.OPEN)
+          ws.send(JSON.stringify({ type: 'flush_audio_buf' }));
+        mediaRecorder.start(200);
+      };
+      if (mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+      } else {
+        if (ws.readyState === WebSocket.OPEN)
+          ws.send(JSON.stringify({ type: 'flush_audio_buf' }));
+        mediaRecorder.start(200);
+      }
+    }
+  } else if (msg.type === 'call_declined') {
+    statusEl.textContent = 'リクエストが拒否されました';
   } else if (msg.type === 'done') {
     processing = false;
     micBtn.className = '';
@@ -834,19 +1006,29 @@ async function startMic(deviceId) {
     audio: deviceId ? { deviceId: { exact: deviceId } } : true,
   });
 
-  // VAD 解析用
-  const vadCtx = new AudioContext();
+  // VAD + 通話送信 用 AudioContext（CALL_SAMPLE_RATE 固定でレートを統一）
+  const vadCtx = new AudioContext({ sampleRate: CALL_SAMPLE_RATE });
   const vadSrc = vadCtx.createMediaStreamSource(currentStream);
   vadAnalyser  = vadCtx.createAnalyser();
   vadAnalyser.fftSize = 256;
   freqData     = new Uint8Array(vadAnalyser.frequencyBinCount);
   vadSrc.connect(vadAnalyser);
 
-  // MediaRecorder
+  // ScriptProcessorNode: 通話中に生 PCM を ~20ms 単位で即送信
+  const callProc = vadCtx.createScriptProcessor(1024, 1, 1);
+  callProc.onaudioprocess = e => {
+    if (!isInCall || ws.readyState !== WebSocket.OPEN) return;
+    const pcm = new Float32Array(e.inputBuffer.getChannelData(0)); // コピー必須
+    ws.send(pcm.buffer);
+  };
+  vadSrc.connect(callProc);
+  callProc.connect(vadCtx.destination); // ダミー接続（ノードを動かすために必要）
+
+  // MediaRecorder: AI モード専用（Whisper に WebM が必要）
   mediaRecorder = new MediaRecorder(currentStream, { mimeType: 'audio/webm;codecs=opus' });
   mediaRecorder.ondataavailable = e => {
-    // processing 中は送らない。それ以外は常に送る（WebMヘッダーを含む先頭チャンクを捨てないため）
-    if (e.data.size > 0 && !processing && ws.readyState === WebSocket.OPEN) {
+    // 通話中は ScriptProcessorNode が担当するので WebM は送らない
+    if (e.data.size > 0 && !isInCall && !processing && ws.readyState === WebSocket.OPEN) {
       ws.send(e.data);
     }
   };
@@ -872,17 +1054,22 @@ async function startMic(deviceId) {
         silenceTimer = setTimeout(() => {
           if (speaking) {
             speaking = false;
+            waveCanvas.classList.remove('active');
+
+            if (isInCall) {
+              // 通話中: レコーダーは止めない。チャンクは流しっぱなし
+              micBtn.className = '';
+              return;
+            }
+
+            // AI / テキスト中継モード: 従来通り stop → end_speech
             // processing=true にするのは onstop 後 — こうしないと
             // ondataavailable（最終チャンク）が processing=true でブロックされる
-            waveCanvas.classList.remove('active');
             micBtn.className = 'processing';
             statusEl.textContent = '処理中...';
-
             mediaRecorder.onstop = () => {
-              processing = true;               // 最終チャンク送信完了後に処理中フラグ
+              processing = true;
               ws.send(JSON.stringify({ type: 'end_speech' }));
-              // MediaRecorder の再起動は done 受信後に行う（ここで start すると
-              // ヘッダーチャンクが processing=true でブロックされてしまう）
             };
             mediaRecorder.stop();
           }
@@ -1015,6 +1202,51 @@ speakerSelect.addEventListener('change', () => {
 modelSelect.addEventListener('change', () => {
   if (ws.readyState === WebSocket.OPEN)
     ws.send(JSON.stringify({ type: 'set_model', model: modelSelect.value }));
+});
+
+// ── ユーザー名 ────────────────────────────────────────────────────
+
+const usernameInput = document.getElementById('usernameInput');
+usernameInput.value = myName;
+usernameInput.addEventListener('change', () => {
+  myName = usernameInput.value.trim().slice(0, 20);
+  setCookie('username', myName);
+  if (ws.readyState === WebSocket.OPEN)
+    ws.send(JSON.stringify({ type: 'set_username', username: myName }));
+});
+
+// ── 通話ボタン / 通知 ─────────────────────────────────────────────
+
+const callBtnEl      = document.getElementById('callBtn');
+const callNotifyEl   = document.getElementById('callNotify');
+const callAcceptBtn  = document.getElementById('callAcceptBtn');
+const callDeclineBtn = document.getElementById('callDeclineBtn');
+
+callBtnEl.addEventListener('click', () => {
+  if (!callBtnEl.classList.contains('incall')) {
+    // 発信側: ユーザージェスチャ内で AudioContext を事前に作成・再開
+    preinitCallAudio();
+    if (ws.readyState === WebSocket.OPEN)
+      ws.send(JSON.stringify({ type: 'call_request' }));
+    statusEl.textContent = '通話リクエスト送信中...';
+  } else {
+    if (ws.readyState === WebSocket.OPEN)
+      ws.send(JSON.stringify({ type: 'call_end' }));
+  }
+});
+
+callAcceptBtn.addEventListener('click', () => {
+  callNotifyEl.style.display = 'none';
+  // 着信側: ユーザージェスチャ内で AudioContext を事前に作成・再開（モバイル必須）
+  preinitCallAudio();
+  if (ws.readyState === WebSocket.OPEN)
+    ws.send(JSON.stringify({ type: 'call_accept' }));
+});
+
+callDeclineBtn.addEventListener('click', () => {
+  callNotifyEl.style.display = 'none';
+  if (ws.readyState === WebSocket.OPEN)
+    ws.send(JSON.stringify({ type: 'call_decline' }));
 });
 </script>
 </body>
