@@ -359,6 +359,22 @@ async def _broadcast_mode() -> None:
             pass
 
 
+async def _announce(
+    ws: "WebSocket",
+    state: dict,
+    loop: asyncio.AbstractEventLoop,
+    text: str,
+) -> None:
+    """AI の声でアナウンスを1件送信する（モード遷移の告知用）。"""
+    try:
+        wav = await synthesize(text, state["tts"], loop, state["speaker"])
+        await ws.send_json({"type": "llm_text", "text": text})
+        if wav:
+            await ws.send_bytes(wav)
+    except Exception as e:
+        log.warning("announce failed: %s", e)
+
+
 async def _relay_to_peers(
     sender: "WebSocket",
     transcript: str,
@@ -406,8 +422,18 @@ async def websocket_handler(ws: WebSocket):
     audio_buf = bytearray()
     loop      = asyncio.get_event_loop()
 
+    prev_count = len(_connections)
     _connections[ws] = state
     await _broadcast_mode()
+
+    # 1→2人：既存ユーザーに「誰かが来た」とAIがアナウンス
+    if prev_count == 1:
+        new_name = state.get("username") or "だれか"
+        for ow, os_ in list(_connections.items()):
+            if ow is not ws:
+                asyncio.create_task(
+                    _announce(ow, os_, loop, f"{new_name}さんが来たよ！話しかけてみてね。")
+                )
 
     try:
         while True:
@@ -464,6 +490,14 @@ async def websocket_handler(ws: WebSocket):
             if t == "set_username":
                 state["username"] = data.get("username", "")[:20]
                 log.info("username → %r", state["username"])
+                # 2人以上いる場合、名前が判明した時点で相手に伝える
+                if len(_connections) >= 2 and state["username"]:
+                    name = state["username"]
+                    for ow, os_ in list(_connections.items()):
+                        if ow is not ws:
+                            asyncio.create_task(
+                                _announce(ow, os_, loop, f"{name}さんが入ってきたよ！")
+                            )
                 continue
 
             if t == "call_request":
@@ -567,9 +601,17 @@ async def websocket_handler(ws: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
+        departed_name = state.get("username") or "相手"
         _connections.pop(ws, None)
         _in_call.discard(ws)
         if _call_requester is ws:
             globals()["_call_requester"] = None
         await _call_broadcast({"type": "call_end"})
         await _broadcast_mode()
+
+        # 2→1人：残ったユーザーにAIが「また二人だよ」とアナウンス
+        if len(_connections) == 1:
+            for ow, os_ in list(_connections.items()):
+                asyncio.create_task(
+                    _announce(ow, os_, loop, f"{departed_name}さんが行ってしまったね。また話しかけてね。")
+                )

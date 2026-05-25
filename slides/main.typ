@@ -55,10 +55,10 @@
   place(top + left,  dx: 28pt, dy: 10pt,
     text(size: 20pt, weight: "bold", fill: fg, header))
   place(top + right, dx: -20pt, dy: 14pt,
-    text(size: 12pt, fill: muted, "AI VRM Chat"))
+    text(size: 12pt, fill: muted, "PURE DIALOGUE"))
   block(width: 100%, height: 100%,
     inset: (top: 58pt, x: 28pt, bottom: 16pt),
-    body)
+    align(horizon, body))
   pagebreak()
 }
 
@@ -76,7 +76,7 @@
   block(width: 100%, height: 100%,
     inset: (left: 68pt, right: 56pt, y: 56pt),
     align(horizon)[
-      #text(fill: muted, size: 13pt, tracking: 3pt)[AI VRM CHAT]
+      #text(fill: muted, size: 13pt, tracking: 3pt)[PURE DIALOGUE]
       #v(8pt)
       #text(size: 34pt, weight: "black", fill: fg, title)
       #if subtitle != none { v(6pt); text(size: 18pt, fill: muted, subtitle) }
@@ -115,25 +115,183 @@
 
 // 1. タイトル
 #title-slide(
-  "ブラウザで動く\nAI キャラクター音声会話システム",
-  subtitle: "VRM × Whisper × Ollama × VoiceVox",
+  "属性ゼロからの\n純粋対話",
+  subtitle: "AI・人間シームレス統合コミュニケーションプラットフォーム",
   author: "石橋憲尚",
   date: "2026-05-25",
 )
 
-// 2. 何を作ったか
-#slide("何を作ったか")[
+// 2. 問いかけ
+#slide("純粋な対話への問いかけ")[
+  #align(center + horizon)[
+    #text(size: 28pt, weight: "bold")[
+      皆さん、最後に\
+      #text(fill: accent)[「自分の属性を1つも気にせず」]\
+      誰かと話したのはいつですか？
+    ]
+    #v(24pt)
+    #text(fill: muted, size: 16pt)[
+      年齢、性別、声、見た目 ——\
+      すべてを忘れて話せた瞬間を思い出してください
+    ]
+  ]
+]
+
+// 3. 社会課題
+#slide("孤独と社会不安の深刻化")[
+  #grid(columns: (1fr, 1fr), gutter: 20pt)[
+    #align(center)[
+      #v(16pt)
+      #text(size: 48pt, weight: "black", fill: accent)[35.3万人]
+      #v(6pt)
+      #text(size: 15pt, fill: muted)[不登校児童数（過去最多）2025年]
+      #v(20pt)
+      #text(size: 48pt, weight: "black", fill: accent2)[2.2万人]
+      #v(6pt)
+      #text(size: 15pt, fill: muted)[年間孤独死者数（65歳以上）2025年]
+    ]
+  ][
+    #v(10pt)
+    #card-box[
+      #set text(size: 16pt)
+      日本社会では不登校児童と高齢者の孤独死が深刻な社会問題となっています。
+
+      #v(8pt)
+      人とのつながりを失った人々が増加し続けている現状を直視する必要があります。
+    ]
+    #v(12pt)
+    #card-box[
+      #set text(size: 15pt)
+      インターネット時代において、私たちは常に他者と*比較される環境*に置かれています。
+
+      #v(6pt)
+      声のコンプレックス、見た目への不安、年齢による偏見——これらが肥大化し、本来の自分を表現することへの恐怖が深刻化しています。
+    ]
+  ]
+]
+
+// 4. 既存SNSの限界
+#slide("既存 SNS の限界")[
+  #grid(columns: (1fr, 1fr), gutter: 16pt)[
+    #card-box[
+      #text(fill: accent, weight: "bold")[既存 SNS の特徴]
+      #v(6pt)
+      #set text(size: 16pt)
+      - プロフィールアイコン必須
+      - フォロワー数・認知度の可視化
+      - 生声での音声通話
+      - 即興レスポンスの圧力
+    ]
+  ][
+    #card-box[
+      #text(fill: accent2, weight: "bold")[引きこもりの方の困難]
+      #v(6pt)
+      #set text(size: 16pt)
+      - 自己開示への恐怖
+      - 比較による劣等感
+      - 声を出すことへの抵抗
+      - 即座の返答プレッシャー
+    ]
+  ]
+  #v(14pt)
+  #align(center)[
+    #text(size: 17pt, fill: accent, weight: "bold")[
+      本当に傷ついている人には高すぎるハードル
+    ]
+  ]
+]
+
+// 5. ソリューション概要
+#slide("ソリューション：属性ゼロの純粋対話")[
+  #grid(columns: (1fr, 1fr, 1fr), gutter: 14pt)[
+    #card-box[
+      #align(center)[
+        #text(size: 28pt, fill: accent, weight: "black")[視]
+        #v(4pt)
+        #text(fill: accent, weight: "bold")[ビジュアルの統一]
+      ]
+      #v(6pt)
+      #set text(size: 15pt)
+      共通の美麗な 3D アバターにより、外見による先入観を完全に排除
+    ]
+  ][
+    #card-box[
+      #align(center)[
+        #text(size: 28pt, fill: accent2, weight: "black")[聴]
+        #v(4pt)
+        #text(fill: accent2, weight: "bold")[聴覚の標準化]
+      ]
+      #v(6pt)
+      #set text(size: 15pt)
+      STT → TTS の音声フィルターにより、声の違いを優しく吸収
+    ]
+  ][
+    #card-box[
+      #align(center)[
+        #text(size: 28pt, fill: rgb("#44ee88"), weight: "black")[名]
+        #v(4pt)
+        #text(fill: rgb("#44ee88"), weight: "bold")[情報の非対称性排除]
+      ]
+      #v(6pt)
+      #set text(size: 15pt)
+      わかるのは相手の「名前」だけ。年齢・性別・経歴を排除
+    ]
+  ]
+]
+
+// 6. 最大のイノベーション
+#slide("最大のイノベーション：AI・人間シームレス統合")[
+  #grid(columns: (1fr, 1fr), gutter: 16pt)[
+    #card-box[
+      #text(fill: accent, weight: "bold")[一人の時は AI が寄り添う]
+      #v(6pt)
+      #set text(size: 16pt)
+      孤独な時間も AI アバターが常に傍に。\
+      心理的負担なく、いつでも対話を始められる安心感
+    ]
+    #v(10pt)
+    #card-box[
+      #text(fill: accent2, weight: "bold")[複数人時は人間へシームレス移行]
+      #v(6pt)
+      #set text(size: 16pt)
+      他のユーザーがいる時は自然に人間同士の対話へ。\
+      *ユーザーは気づかないうちに段階的に*他者との交流へ移行
+    ]
+  ][
+    #v(10pt)
+    #text(fill: muted, size: 14pt)[UX 体験の流れ]
+    #v(8pt)
+    #let step(n, title, desc) = grid(
+      columns: (32pt, 1fr), gutter: 8pt,
+      align(center, text(fill: accent, weight: "black", size: 18pt)[#n]),
+      block[
+        #text(weight: "bold")[#title] #linebreak()
+        #text(fill: muted, size: 14pt)[#desc]
+      ],
+    )
+    #step("1", "安心", "AI との対話で心を開く")
+    #v(6pt)
+    #step("2", "慣れ", "対話スキルを自然に習得")
+    #v(6pt)
+    #step("3", "移行", "気づかぬうちに人間と対話")
+    #v(6pt)
+    #step("4", "成長", "対人不安を克服し交流拡大")
+  ]
+]
+
+// 7. デモ・スクリーンショット（旧「何を作ったか」）
+#slide("デモ：リアルタイム対話")[
   #grid(columns: (1fr, 1fr), gutter: 16pt)[
     #v(6pt)
-    VRM 3D キャラクターとブラウザ上でリアルタイム音声会話できる Web アプリ
+    マイク入力に即座に反応するアバターのリップシンク技術と、多彩なペルソナ切り替え機能
 
     #v(10pt)
     #card-box[
       #set text(size: 16pt)
-      - *話しかける* → 自動で音声検知・認識
-      - キャラが *口パク・瞬き* しながら返答
-      - 会話を重ねると *親密度が上がり態度が変わる*
-      - スマホ・PC どちらからでもアクセス可
+      - マイク入力 → 即時リップシンク反応
+      - ペルソナ切り替え：ツンデレ / 幼児 / お姉さん
+      - 統一アバターで自然な対話体験
+      - 心理的障壁のない安心コミュニケーション
     ]
     #v(10pt)
     #badge(accent2, "ビルド不要") #h(5pt)
@@ -147,14 +305,14 @@
   ]
 ]
 
-// 3. システム全体構成
+// 8. システム全体構成
 #slide("システム全体構成")[
   #align(center + horizon)[
     #image("fig/architecture.png", width: 88%)
   ]
 ]
 
-// 4. パイプラインの流れ
+// 9. パイプラインの流れ
 #slide("パイプラインの流れ")[
   #set text(size: 16pt)
   #let row(label, desc) = grid(
@@ -171,7 +329,7 @@
   #row("◆ 親密度",   "応答後に別途 LLM を呼び出し +1/0/−1 を評価。Cookie で永続化")
 ]
 
-// 5. 音声入力
+// 10. 音声入力
 #slide("音声入力：VAD と WebM の罠")[
   #grid(columns: (1fr, 1fr), gutter: 16pt)[
     #text(fill: accent, weight: "bold")[VAD（音声区間検出）]
@@ -215,7 +373,7 @@
   ]
 ]
 
-// 6. LLM連携
+// 11. LLM連携
 #slide("LLM 連携：ストリーミングとペルソナ")[
   #grid(columns: (1fr, 1fr), gutter: 16pt)[
     #card-box[
@@ -262,7 +420,7 @@
   ]
 ]
 
-// 7. 3Dフロントエンド
+// 12. 3Dフロントエンド
 #slide("3D フロントエンド：VRM と詰まった点")[
   #grid(columns: (1fr, 1fr), gutter: 16pt)[
     #card-box[
@@ -300,7 +458,7 @@
   ]
 ]
 
-// 8. 親密度システム
+// 13. 親密度システム
 #slide("親密度システム")[
   #grid(columns: (1fr, 1fr), gutter: 16pt)[
     #v(4pt)
@@ -321,8 +479,9 @@
       #text(fill: accent2, weight: "bold")[5 段階の態度変化]
       #v(4pt)
       #set text(size: 15pt)
-      0〜20：余所余所しい　/　21〜60：普通〜親しみ #linebreak()
-      61〜80：温かく甘える　/　81〜100：愛情全開
+      0〜20：余所余所しい　/　21〜40：普通#linebreak()
+      41〜60：親しみ　/　61〜80：温かく甘える#linebreak()
+      81〜100：愛情全開
     ]
   ][
     #align(center + horizon)[
@@ -336,7 +495,7 @@
   ]
 ]
 
-// 9. 工夫まとめ
+// 14. 工夫まとめ
 #slide("工夫・苦労した点まとめ")[
   #set text(size: 15pt)
   #grid(columns: (1fr, 1fr), gutter: 12pt)[
@@ -371,7 +530,7 @@
   ]
 ]
 
-// 10. まとめ
+// 15. まとめ
 #slide("まとめと今後の展望")[
   #grid(columns: (1fr, 1fr), gutter: 16pt)[
     #card-box[
@@ -406,7 +565,7 @@
   ]
 ]
 
-// 11. 終わり
+// 16. 終わり
 #end-slide("ご清聴ありがとうございました")[
   #v(14pt)
   #text(fill: muted, size: 17pt)[
