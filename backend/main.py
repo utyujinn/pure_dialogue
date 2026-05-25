@@ -99,6 +99,24 @@ PERSONAS: dict[str, dict] = {
 
 DEFAULT_PERSONA = "oneesan"
 
+
+def affinity_modifier(level: int) -> str:
+    if level <= 20:
+        return "【関係性】まだ打ち解けていない段階。ぎこちなく、やや余所余所しい態度で接する。"
+    elif level <= 40:
+        return "【関係性】顔見知り程度。普通の距離感で話す。"
+    elif level <= 60:
+        return "【関係性】まずまず仲良し。親しみを込めた話し方をする。"
+    elif level <= 80:
+        return "【関係性】とても仲良し。温かく甘えた話し方をして、積極的に近づこうとする。"
+    else:
+        return "【関係性】最高の仲良し。溺愛していて、ものすごく甘えて愛情を全開にして接する。"
+
+
+def build_system_prompt(persona_id: str, affinity: int) -> str:
+    return PERSONAS[persona_id]["prompt"] + affinity_modifier(affinity)
+
+
 app = FastAPI()
 
 log.info("Whisper モデルをロード中...")
@@ -184,11 +202,23 @@ def decode_webm(webm_bytes: bytes) -> np.ndarray:
     return np.frombuffer(proc.stdout, dtype=np.int16).astype(np.float32) / 32768.0
 
 
+_WHISPER_HALLUCINATIONS = frozenset([
+    "ご視聴ありがとうございました",
+    "チャンネル登録よろしくお願いします",
+    "ありがとうございました",
+    "お疲れ様でした",
+    "ん",
+])
+
 def run_whisper(pcm: np.ndarray) -> str:
     if pcm.size < 1600:
         return ""
     segments, _ = whisper.transcribe(pcm, language="ja", vad_filter=True)
-    return "".join(seg.text for seg in segments).strip()
+    text = "".join(seg.text for seg in segments).strip()
+    if any(h in text for h in _WHISPER_HALLUCINATIONS):
+        log.info("Whisper hallucination filtered: %r", text)
+        return ""
+    return text
 
 
 # ── TTS ──────────────────────────────────────────────────────────
@@ -231,6 +261,36 @@ async def synthesize(text: str, engine: str, loop: asyncio.AbstractEventLoop, sp
 SENTENCE_ENDS = frozenset("。！？\n.!?")
 
 
+async def evaluate_affinity(transcript: str, response: str, model: str) -> int:
+    prompt = (
+        "以下の会話1ターンを評価してください。\n"
+        f"ユーザー: {transcript}\n"
+        f"AI: {response}\n\n"
+        "この会話はポジティブな交流でしたか？\n"
+        "+1、0、-1 のどれか数字だけを返してください。\n"
+        "+1: 温かい・楽しい・感謝などポジティブ\n"
+        "0: 中立的な情報交換\n"
+        "-1: 不満・不快などネガティブ"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(f"{OLLAMA_URL}/api/chat", json={
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+            })
+            r.raise_for_status()
+            content = r.json().get("message", {}).get("content", "").strip()
+            if "+1" in content or content == "1":
+                return 1
+            elif "-1" in content:
+                return -1
+            return 0
+    except Exception as e:
+        log.warning("affinity eval failed: %s", e)
+        return 0
+
+
 async def stream_llm_and_tts(
     ws: WebSocket,
     loop: asyncio.AbstractEventLoop,
@@ -238,7 +298,7 @@ async def stream_llm_and_tts(
     engine: str,
     model: str,
     speaker: int,
-):
+) -> str:
     sentence_buf = ""
     full_response = ""
 
@@ -282,6 +342,7 @@ async def stream_llm_and_tts(
     await ws.send_json({"type": "done"})
     if full_response:
         history.append({"role": "assistant", "content": full_response})
+    return full_response
 
 
 # ── WebSocket ─────────────────────────────────────────────────────
@@ -290,7 +351,8 @@ async def stream_llm_and_tts(
 async def websocket_handler(ws: WebSocket):
     await ws.accept()
     current_persona  = DEFAULT_PERSONA
-    history          = [{"role": "system", "content": PERSONAS[current_persona]["prompt"]}]
+    current_affinity = 50
+    history          = [{"role": "system", "content": build_system_prompt(current_persona, current_affinity)}]
     audio_buf        = bytearray()
     loop             = asyncio.get_event_loop()
     tts_engine       = "voicevox"
@@ -324,12 +386,18 @@ async def websocket_handler(ws: WebSocket):
                 log.info("VoiceVox speaker → %d", voicevox_speaker)
                 continue
 
+            if data.get("type") == "set_affinity":
+                current_affinity = min(100, max(0, int(data.get("value", 50))))
+                if history:
+                    history[0] = {"role": "system", "content": build_system_prompt(current_persona, current_affinity)}
+                log.info("affinity → %d", current_affinity)
+                continue
+
             if data.get("type") == "set_persona":
                 pid = data.get("persona", DEFAULT_PERSONA)
                 if pid in PERSONAS:
                     current_persona = pid
-                    # システムプロンプトを差し替えて会話履歴をリセット
-                    history = [{"role": "system", "content": PERSONAS[pid]["prompt"]}]
+                    history = [{"role": "system", "content": build_system_prompt(pid, current_affinity)}]
                     log.info("persona → %s", pid)
                 continue
 
@@ -355,7 +423,12 @@ async def websocket_handler(ws: WebSocket):
 
                 await ws.send_json({"type": "transcript", "text": transcript})
                 history.append({"role": "user", "content": transcript})
-                await stream_llm_and_tts(ws, loop, history, tts_engine, ollama_model, voicevox_speaker)
+                full_resp = await stream_llm_and_tts(ws, loop, history, tts_engine, ollama_model, voicevox_speaker)
+                delta = await evaluate_affinity(transcript, full_resp, ollama_model)
+                try:
+                    await ws.send_json({"type": "affinity", "delta": delta})
+                except Exception:
+                    pass
 
             except WebSocketDisconnect:
                 raise
