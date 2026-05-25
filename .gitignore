@@ -17,6 +17,9 @@ assets/*.Zone.Identifier
 # IrodoriTTS clone (external repo)
 Irodori-TTS/
 
+# Env / secrets
+.env
+
 # Misc
 blueprint.md
 CLAUDE.md

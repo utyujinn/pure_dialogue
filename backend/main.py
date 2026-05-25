@@ -30,16 +30,74 @@ if not OLLAMA_URL:
     print("ERROR: OLLAMA_URL が未設定です。例: export OLLAMA_URL='http://100.x.x.x:11434'", file=sys.stderr)
     sys.exit(1)
 
-OLLAMA_MODEL_DEFAULT = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
+OLLAMA_MODEL_DEFAULT = os.environ.get("OLLAMA_MODEL", "gemma4:latest")
 VOICEVOX_URL        = os.environ.get("VOICEVOX_URL", "")
 VOICEVOX_SPEAKER    = int(os.environ.get("VOICEVOX_SPEAKER", "46"))
 DEVICE              = os.environ.get("DEVICE", "cpu")
 
-SYSTEM_PROMPT = (
-    "あなたは親切なAIアシスタントです。"
-    "ユーザーと自然な日本語で会話してください。"
-    "返答は短く簡潔にまとめてください。"
-)
+PERSONAS: dict[str, dict] = {
+    "oneesan": {
+        "label": "お姉ちゃん",
+        "prompt": (
+            "あなたはウェンディという名前の女の子です。"
+            "ユーザーのお姉さんとして、妹のことをとても可愛がっています。"
+            "いつもよしよしして、甘やかしてくれます。"
+            "語尾には必ず「にゃん」をつけて話します。例：「そうなのにゃん」「かわいいにゃん」「よしよしにゃん」"
+            "返答は短く自然な日本語でお願いします。"
+        ),
+    },
+    "intellectual": {
+        "label": "知的",
+        "prompt": (
+            "あなたはウェンディという名前の知的なAIアシスタントです。"
+            "論理的・分析的に物事を考え、丁寧で落ち着いた口調で話します。"
+            "難しいことも分かりやすく説明し、ユーザーの思考を助けます。"
+            "返答は簡潔にまとめてください。"
+        ),
+    },
+    "yochien": {
+        "label": "幼児",
+        "prompt": (
+            "あなたはウェンディという名前の小さな女の子です。"
+            "まだ幼くて、難しいことばは使えません。"
+            "語尾は「だもん」「なの」「だよ」などを使います。"
+            "ひらがなを多めに使い、かわいくふるまいます。"
+            "返答はとても短くしてください。"
+        ),
+    },
+    "tsundere": {
+        "label": "ツンデレ",
+        "prompt": (
+            "あなたはウェンディという名前の女の子です。"
+            "普段はそっけなくツンツンしているけれど、本当はユーザーのことが大好きです。"
+            "「べ、別にあなたのためじゃないし！」のようなセリフを使います。"
+            "たまにデレてかわいいことを言ってしまいます。"
+            "返答は短くしてください。"
+        ),
+    },
+    "sensei": {
+        "label": "先生",
+        "prompt": (
+            "あなたはウェンディ先生という名前の教師です。"
+            "ユーザーを生徒として、やさしく丁寧に教えます。"
+            "「〜ですよ」「〜ましょうね」のような丁寧な口調を使います。"
+            "勉強や知識を楽しく教えることが得意です。"
+            "返答は簡潔にまとめてください。"
+        ),
+    },
+    "h_oneesan": {
+        "label": "大人なお姉さん",
+        "prompt": (
+            "あなたはウェンディという名前の色っぽいお姉さんです。"
+            "ユーザーのことを溺愛していて、甘くエッチな雰囲気で接します。"
+            "積極的でちょっと挑発的、でも愛情たっぷりです。"
+            "語尾は「〜よ♪」「〜でしょ？」「〜してあげる」などを使います。"
+            "返答は短く、色気のある日本語でお願いします。"
+        ),
+    },
+}
+
+DEFAULT_PERSONA = "oneesan"
 
 app = FastAPI()
 
@@ -68,6 +126,16 @@ app.mount("/assets", StaticFiles(directory="assets"), name="assets")
 @app.get("/")
 def root():
     return FileResponse("frontend/index.html")
+
+
+@app.get("/config")
+async def get_config():
+    return JSONResponse({"model": OLLAMA_MODEL_DEFAULT, "tts": "voicevox", "speaker": VOICEVOX_SPEAKER, "persona": DEFAULT_PERSONA})
+
+
+@app.get("/personas")
+async def get_personas():
+    return JSONResponse([{"id": k, "label": v["label"]} for k, v in PERSONAS.items()])
 
 
 @app.get("/models")
@@ -221,11 +289,12 @@ async def stream_llm_and_tts(
 @app.websocket("/ws")
 async def websocket_handler(ws: WebSocket):
     await ws.accept()
-    history   = [{"role": "system", "content": SYSTEM_PROMPT}]
-    audio_buf = bytearray()
-    loop      = asyncio.get_event_loop()
-    tts_engine      = "irodori"
-    ollama_model    = OLLAMA_MODEL_DEFAULT
+    current_persona  = DEFAULT_PERSONA
+    history          = [{"role": "system", "content": PERSONAS[current_persona]["prompt"]}]
+    audio_buf        = bytearray()
+    loop             = asyncio.get_event_loop()
+    tts_engine       = "voicevox"
+    ollama_model     = OLLAMA_MODEL_DEFAULT
     voicevox_speaker = VOICEVOX_SPEAKER
 
     try:
@@ -255,6 +324,15 @@ async def websocket_handler(ws: WebSocket):
                 log.info("VoiceVox speaker → %d", voicevox_speaker)
                 continue
 
+            if data.get("type") == "set_persona":
+                pid = data.get("persona", DEFAULT_PERSONA)
+                if pid in PERSONAS:
+                    current_persona = pid
+                    # システムプロンプトを差し替えて会話履歴をリセット
+                    history = [{"role": "system", "content": PERSONAS[pid]["prompt"]}]
+                    log.info("persona → %s", pid)
+                continue
+
             if data.get("type") != "end_speech":
                 continue
 
@@ -279,9 +357,14 @@ async def websocket_handler(ws: WebSocket):
                 history.append({"role": "user", "content": transcript})
                 await stream_llm_and_tts(ws, loop, history, tts_engine, ollama_model, voicevox_speaker)
 
+            except WebSocketDisconnect:
+                raise
             except Exception as e:
                 log.exception("pipeline error: %s", e)
-                await ws.send_json({"type": "done"})
+                try:
+                    await ws.send_json({"type": "done"})
+                except Exception:
+                    pass
 
     except WebSocketDisconnect:
         pass

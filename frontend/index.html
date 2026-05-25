@@ -184,15 +184,21 @@ select.panel-select option {
 <!-- 設定パネル -->
 <div id="settingsPanel">
   <div class="setting-group">
+    <label>ペルソナ</label>
+    <select id="personaSelect" class="panel-select">
+      <option value="">読み込み中...</option>
+    </select>
+  </div>
+  <div class="setting-group">
     <label>TTS エンジン</label>
     <div class="radio-row">
-      <input type="radio" name="tts" id="tts-irodori" value="irodori" checked>
+      <input type="radio" name="tts" id="tts-irodori" value="irodori">
       <label for="tts-irodori">IrodoriTTS</label>
-      <input type="radio" name="tts" id="tts-voicevox" value="voicevox">
+      <input type="radio" name="tts" id="tts-voicevox" value="voicevox" checked>
       <label for="tts-voicevox">VoiceVox</label>
     </div>
   </div>
-  <div class="setting-group" id="speakerGroup" style="display:none">
+  <div class="setting-group" id="speakerGroup">
     <label>VoiceVox 話者</label>
     <select id="speakerSelect" class="panel-select">
       <option value="">読み込み中...</option>
@@ -334,6 +340,9 @@ window.addEventListener('resize', () => {
 // ── VRM ──────────────────────────────────────────────────────────
 
 let vrm = null;
+// morphTargetInfluences を直接操作するためのメッシュ参照
+let morphMeshes = []; // [{mesh, aaIdx, blinkIdx}]
+
 const loader = new GLTFLoader();
 loader.register(parser => new VRMLoaderPlugin(parser));
 
@@ -344,6 +353,29 @@ loader.load(
     scene.add(vrm.scene);
     applyRestPose(vrm);
     document.getElementById('status').textContent = 'マイクボタンを押して話しかけてください';
+
+    // Wendy_Pet を traverse 後に切り離す（traverse 中の DOM 変更は NG）
+    let wendyPetNode = null;
+    vrm.scene.traverse(obj => { if (obj.name === 'Wendy_Pet') wendyPetNode = obj; });
+    if (wendyPetNode) {
+      wendyPetNode.removeFromParent();
+      scene.add(wendyPetNode);
+      wendyPetNode.position.set(0, 0, 0); // シーン原点基準にリセット
+      candyRoot        = wendyPetNode;
+      candyOrbitRadius = 0.45;
+      candyBaseY       = 0.05; // キャラの胸〜顔あたり
+    }
+
+    // モーフターゲットを持つメッシュを収集
+    vrm.scene.traverse(obj => {
+      if (!obj.isMesh || !obj.morphTargetDictionary) return;
+      const dict = obj.morphTargetDictionary;
+      const aaIdx    = dict['vrc.v_aa'] ?? dict['A'] ?? dict['a'];
+      const blinkIdx = dict['eye_blink'] ?? dict['vrc.Blink'] ?? dict['Blink'];
+      if (aaIdx !== undefined || blinkIdx !== undefined) {
+        morphMeshes.push({ mesh: obj, aaIdx, blinkIdx });
+      }
+    });
   },
   xhr => {
     if (xhr.total) {
@@ -501,6 +533,12 @@ function updateBubbles(t, dt) {
 
 // ── アニメーションループ ──────────────────────────────────────────
 
+// candy ゴーストの円運動用
+let candyRoot        = null;
+const candyOrbitCenter = new THREE.Vector3();
+let candyOrbitRadius = 0.45;
+let candyBaseY       = 1.2;
+
 const clock = new THREE.Clock();
 let elapsed   = 0;
 let lipSmooth = 0;
@@ -520,7 +558,6 @@ let nextBlink  = 3 + Math.random() * 4;
     // リップシンク
     const lipTarget = getLipValue();
     lipSmooth += (lipTarget - lipSmooth) * (1 - Math.exp(-delta * 18));
-    vrm.expressionManager?.setValue('aa', lipSmooth);
 
     // 瞬き
     blinkTimer += delta;
@@ -535,10 +572,12 @@ let nextBlink  = 3 + Math.random() * 4;
       blinkValue = Math.max(0, blinkValue - delta * 8);
       if (blinkValue <= 0) blinkPhase = 0;
     }
-    // blink / blinkLeft+Right の両方を試す（モデル依存）
-    vrm.expressionManager?.setValue('blink',      blinkValue);
-    vrm.expressionManager?.setValue('blinkLeft',  blinkValue);
-    vrm.expressionManager?.setValue('blinkRight', blinkValue);
+
+    // morphTargetInfluences を直接制御（expressionManager が null のモデル対応）
+    for (const { mesh, aaIdx, blinkIdx } of morphMeshes) {
+      if (aaIdx    !== undefined) mesh.morphTargetInfluences[aaIdx]    = lipSmooth;
+      if (blinkIdx !== undefined) mesh.morphTargetInfluences[blinkIdx] = blinkValue;
+    }
 
     // 上半身のゆらゆら
     const spine = vrm.humanoid?.getNormalizedBoneNode('spine');
@@ -553,6 +592,17 @@ let nextBlink  = 3 + Math.random() * 4;
     if (rUA) { rUA.rotation.x = 0.15; rUA.rotation.z =  Math.PI * 0.38 + Math.sin(elapsed * 0.7 + Math.PI) * 0.05; }
 
     vrm.update(delta);
+
+    // candy ゴーストを円状に移動
+    if (candyRoot) {
+      const a = elapsed * 0.7; // 公転速度
+      candyRoot.position.set(
+        Math.cos(a) * candyOrbitRadius,
+        candyBaseY + Math.sin(elapsed * 1.1) * 0.06, // 上下にふわふわ
+        Math.sin(a) * candyOrbitRadius,
+      );
+      candyRoot.rotation.y = -a; // キャラ方向を向き続ける
+    }
   }
   updateBubbles(elapsed, delta);
   drawWaveform();
@@ -561,7 +611,8 @@ let nextBlink  = 3 + Math.random() * 4;
 
 // ── WebSocket ────────────────────────────────────────────────────
 
-const ws = new WebSocket(`ws://${location.host}/ws`);
+const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+const ws = new WebSocket(`${wsProto}//${location.host}/ws`);
 ws.binaryType = 'arraybuffer';
 ws.onopen = () => {
   // 接続時に現在選択中の話者をバックエンドへ通知
@@ -701,19 +752,26 @@ micSelect.addEventListener('change', async () => {
   if (mediaRecorder) await startMic(selectedDevice);
 });
 
-// 最初のクリックで起動
+async function initMic() {
+  if (mediaRecorder) return;
+  try {
+    statusEl.textContent = 'マイク準備中...';
+    await startMic('');
+    await populateDeviceList();
+    statusEl.textContent = '話しかけてください（自動検知）';
+  } catch (err) {
+    statusEl.textContent = 'マイクへのアクセスが拒否されました（🎤 で再試行）';
+    console.error(err);
+  }
+}
+
+// ページ読み込み時に自動でマイク初期化
+initMic();
+
+// ボタンは AudioContext resume + 再試行用
 micBtn.addEventListener('click', async () => {
   if (audioCtx.state === 'suspended') await audioCtx.resume();
-  if (!mediaRecorder) {
-    try {
-      await startMic('');
-      await populateDeviceList();
-      statusEl.textContent = '話しかけてください（自動検知）';
-    } catch (err) {
-      statusEl.textContent = 'マイクへのアクセスが拒否されました';
-      console.error(err);
-    }
-  }
+  await initMic();
 });
 
 // ── 設定パネル ────────────────────────────────────────────────────
@@ -723,6 +781,7 @@ const settingsPanel = document.getElementById('settingsPanel');
 const modelSelect   = document.getElementById('modelSelect');
 const speakerSelect = document.getElementById('speakerSelect');
 const speakerGroup  = document.getElementById('speakerGroup');
+const personaSelect = document.getElementById('personaSelect');
 
 // パネル開閉
 settingsBtn.addEventListener('click', () => settingsPanel.classList.toggle('open'));
@@ -732,14 +791,39 @@ document.addEventListener('click', e => {
   }
 });
 
+// ペルソナ一覧を取得して反映
+fetch('/personas').then(r => r.json()).then(personas => {
+  personaSelect.innerHTML = '';
+  personas.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.id; opt.text = p.label;
+    personaSelect.appendChild(opt);
+  });
+}).catch(() => {
+  personaSelect.innerHTML = '<option>取得失敗</option>';
+});
+
+personaSelect.addEventListener('change', () => {
+  if (ws.readyState === WebSocket.OPEN)
+    ws.send(JSON.stringify({ type: 'set_persona', persona: personaSelect.value }));
+});
+
 // Ollamaモデル一覧を取得して反映
-fetch('/models').then(r => r.json()).then(models => {
+Promise.all([
+  fetch('/models').then(r => r.json()),
+  fetch('/config').then(r => r.json()),
+]).then(([models, config]) => {
   modelSelect.innerHTML = '';
   models.forEach(m => {
     const opt = document.createElement('option');
     opt.value = m; opt.text = m;
     modelSelect.appendChild(opt);
   });
+  if (config.model && models.includes(config.model)) {
+    modelSelect.value = config.model;
+  }
+  if (ws.readyState === WebSocket.OPEN)
+    ws.send(JSON.stringify({ type: 'set_model', model: modelSelect.value }));
 }).catch(() => {
   modelSelect.innerHTML = '<option>取得失敗</option>';
 });
