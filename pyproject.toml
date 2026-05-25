@@ -1,0 +1,23 @@
+[project]
+name = "ai-vrm-chat"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.29.0",
+    "faster-whisper>=1.0.0",
+    "httpx>=0.27.0",
+    "numpy>=1.26.0",
+    "soundfile>=0.12.0",
+    "irodori-tts[cpu]",
+]
+
+[tool.uv.sources]
+irodori-tts = { path = "Irodori-TTS", editable = true }
+
+[tool.setuptools.packages.find]
+include = ["backend*"]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"

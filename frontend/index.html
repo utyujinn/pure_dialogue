@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>AI VRM Chat</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background:
+    radial-gradient(ellipse at 65% 25%, rgba(140,30,180,0.35) 0%, transparent 55%),
+    radial-gradient(ellipse at 30% 70%, rgba(0,200,220,0.25) 0%, transparent 55%),
+    linear-gradient(to bottom,
+      #04041a 0%,
+      #0a0e50 18%,
+      #0d2e80 38%,
+      #085a94 58%,
+      #00a0be 72%,
+      #007aaa 85%,
+      #00436e 100%
+    );
+  overflow: hidden;
+  font-family: sans-serif;
+  color: #eee;
+}
+canvas#canvas { display: block; }
+
+#ui {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  padding: 16px 24px 100px;
+  background: linear-gradient(transparent, rgba(0,0,0,0.7));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+#transcript { font-size: 14px; color: #ddd; min-height: 20px; text-shadow: 0 1px 3px rgba(0,0,0,0.6); }
+#response   { font-size: 16px; color: #fff; min-height: 24px; line-height: 1.5; text-shadow: 0 1px 4px rgba(0,0,0,0.7); }
+
+/* 波形キャンバス */
+#waveCanvas {
+  position: fixed;
+  bottom: 96px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 320px;
+  height: 56px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+#waveCanvas.active { opacity: 1; }
+
+/* マイクデバイス選択 */
+#micSelect {
+  position: fixed;
+  bottom: 96px;
+  right: 24px;
+  width: 200px;
+  padding: 6px 8px;
+  background: rgba(30,30,50,0.85);
+  border: 1px solid #444;
+  border-radius: 8px;
+  color: #ccc;
+  font-size: 12px;
+  cursor: pointer;
+  display: none;
+}
+#micSelect.visible { display: block; }
+
+#micBtn {
+  position: fixed;
+  bottom: 24px; right: 24px;
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  border: none;
+  background: #4a4aff;
+  color: #fff;
+  font-size: 28px;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+}
+#micBtn:active { transform: scale(0.93); }
+#micBtn.listening { background: #e04040; }
+#micBtn.processing { background: #666; cursor: default; }
+
+#status {
+  position: fixed;
+  top: 12px; left: 50%;
+  transform: translateX(-50%);
+  font-size: 13px;
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  pointer-events: none;
+}
+
+/* 設定ボタン */
+#settingsBtn {
+  position: fixed;
+  top: 12px; right: 16px;
+  background: rgba(0,0,0,0.35);
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 20px;
+  width: 40px; height: 40px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* 設定パネル */
+#settingsPanel {
+  position: fixed;
+  top: 0; right: -280px;
+  width: 260px; height: 100%;
+  background: rgba(10,20,40,0.88);
+  backdrop-filter: blur(12px);
+  border-left: 1px solid rgba(255,255,255,0.15);
+  padding: 60px 20px 20px;
+  display: flex; flex-direction: column; gap: 24px;
+  transition: right 0.3s ease;
+  color: #eee;
+}
+#settingsPanel.open { right: 0; }
+
+.setting-group { display: flex; flex-direction: column; gap: 8px; }
+.setting-group label { font-size: 12px; color: #aaa; text-transform: uppercase; letter-spacing: 0.05em; }
+.setting-group select,
+.setting-group .radio-row { width: 100%; }
+
+.radio-row {
+  display: flex;
+  background: rgba(255,255,255,0.07);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.radio-row input[type=radio] { display: none; }
+.radio-row label {
+  flex: 1;
+  text-align: center;
+  padding: 8px 4px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #aaa;
+  text-transform: none;
+  letter-spacing: 0;
+  transition: background 0.15s, color 0.15s;
+}
+.radio-row input[type=radio]:checked + label {
+  background: #4a4aff;
+  color: #fff;
+}
+
+select.panel-select {
+  background: #111;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 8px;
+  color: #eee;
+  font-size: 13px;
+  padding: 8px 10px;
+  appearance: none;
+  cursor: pointer;
+}
+select.panel-select option {
+  background: #111;
+  color: #eee;
+}
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+<canvas id="waveCanvas"></canvas>
+
+<div id="ui">
+  <div id="transcript"></div>
+  <div id="response"></div>
+</div>
+<div id="status">VRMを読み込み中...</div>
+
+<!-- 設定ボタン -->
+<button id="settingsBtn" title="設定">⚙️</button>
+
+<!-- 設定パネル -->
+<div id="settingsPanel">
+  <div class="setting-group">
+    <label>TTS エンジン</label>
+    <div class="radio-row">
+      <input type="radio" name="tts" id="tts-irodori" value="irodori" checked>
+      <label for="tts-irodori">IrodoriTTS</label>
+      <input type="radio" name="tts" id="tts-voicevox" value="voicevox">
+      <label for="tts-voicevox">VoiceVox</label>
+    </div>
+  </div>
+  <div class="setting-group" id="speakerGroup" style="display:none">
+    <label>VoiceVox 話者</label>
+    <select id="speakerSelect" class="panel-select">
+      <option value="">読み込み中...</option>
+    </select>
+  </div>
+  <div class="setting-group">
+    <label>AI モデル</label>
+    <select id="modelSelect" class="panel-select">
+      <option value="">読み込み中...</option>
+    </select>
+  </div>
+  <div class="setting-group">
+    <label>マイク</label>
+    <select id="micSelect" class="panel-select" style="display:block;position:static;width:100%;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#eee;font-size:13px;padding:8px 10px;">
+      <option value="">🎤 マイクを選択...</option>
+    </select>
+  </div>
+</div>
+
+<button id="micBtn" title="クリックして話す">🎤</button>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/",
+    "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@2.1.2/lib/three-vrm.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { VRMLoaderPlugin } from '@pixiv/three-vrm';
+
+// ── Three.js ──────────────────────────────────────────────────────
+
+const canvas   = document.getElementById('canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x000000, 0);
+
+// MToonシェーダーを正しく見せるための設定
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping      = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 1.4, 2.8);
+camera.lookAt(0, 1.1, 0);
+
+// ── カメラ操作（ドラッグ±20度 / スクロールズーム） ───────────────
+const CAM_CENTER = new THREE.Vector3(0, 1.1, 0);
+let camRadius = camera.position.distanceTo(CAM_CENTER);
+const CAM_MAX_ANG = Math.PI / 9; // 20度
+const CAM_MIN_R   = 1.2;
+const CAM_MAX_R   = 7.0;
+let camYaw   = 0;
+let camPitch = Math.asin((camera.position.y - CAM_CENTER.y) / camRadius);
+let camDragging = false;
+let camLast     = { x: 0, y: 0 };
+
+function applyCamera() {
+  camera.position.set(
+    camRadius * Math.sin(camYaw)   * Math.cos(camPitch),
+    CAM_CENTER.y + camRadius * Math.sin(camPitch),
+    camRadius * Math.cos(camYaw)   * Math.cos(camPitch),
+  );
+  camera.lookAt(CAM_CENTER);
+}
+
+const cv = document.getElementById('canvas');
+cv.addEventListener('mousedown',  e => { camDragging = true;  camLast = { x: e.clientX, y: e.clientY }; });
+cv.addEventListener('mousemove',  e => {
+  if (!camDragging) return;
+  camYaw   = Math.max(-CAM_MAX_ANG, Math.min(CAM_MAX_ANG, camYaw   - (e.clientX - camLast.x) * 0.004));
+  camPitch = Math.max(-CAM_MAX_ANG, Math.min(CAM_MAX_ANG, camPitch + (e.clientY - camLast.y) * 0.004));
+  camLast  = { x: e.clientX, y: e.clientY };
+  applyCamera();
+});
+cv.addEventListener('mouseup',    () => camDragging = false);
+cv.addEventListener('mouseleave', () => camDragging = false);
+cv.addEventListener('touchstart', e => { e.preventDefault(); camDragging = true;  camLast = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }, { passive: false });
+cv.addEventListener('touchmove',  e => {
+  e.preventDefault();
+  if (!camDragging) return;
+  camYaw   = Math.max(-CAM_MAX_ANG, Math.min(CAM_MAX_ANG, camYaw   - (e.touches[0].clientX - camLast.x) * 0.004));
+  camPitch = Math.max(-CAM_MAX_ANG, Math.min(CAM_MAX_ANG, camPitch + (e.touches[0].clientY - camLast.y) * 0.004));
+  camLast  = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  applyCamera();
+}, { passive: false });
+cv.addEventListener('touchend', () => camDragging = false);
+cv.addEventListener('wheel', e => {
+  e.preventDefault();
+  camRadius = Math.max(CAM_MIN_R, Math.min(CAM_MAX_R, camRadius + e.deltaY * 0.006));
+  applyCamera();
+}, { passive: false });
+
+// 半球ライト: 空の色(上) + 海の色(下) でキャラを自然に包む
+const hemiLight = new THREE.HemisphereLight(0xc8e8ff, 0x2277aa, 2.5);
+scene.add(hemiLight);
+
+// メイン太陽光（斜め前から）
+const sunLight = new THREE.DirectionalLight(0xfff8e8, 3.0);
+sunLight.position.set(2, 5, 4);
+scene.add(sunLight);
+
+// 正面フィルライト（逆光の影を和らげる）
+const fillLight = new THREE.DirectionalLight(0xaad4ff, 1.2);
+fillLight.position.set(-2, 1, 6);
+scene.add(fillLight);
+
+// 海面プレーン（幻想的な深い青紫）
+const ocean = new THREE.Mesh(
+  new THREE.PlaneGeometry(40, 40),
+  new THREE.MeshStandardMaterial({
+    color: 0x0a2a6e,
+    emissive: 0x001030,
+    roughness: 0.05,
+    metalness: 0.6,
+    transparent: true,
+    opacity: 0.88,
+  })
+);
+ocean.rotation.x = -Math.PI / 2;
+ocean.position.y = -0.85;
+scene.add(ocean);
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ── VRM ──────────────────────────────────────────────────────────
+
+let vrm = null;
+const loader = new GLTFLoader();
+loader.register(parser => new VRMLoaderPlugin(parser));
+
+loader.load(
+  '/assets/model.vrm',
+  gltf => {
+    vrm = gltf.userData.vrm;
+    scene.add(vrm.scene);
+    applyRestPose(vrm);
+    document.getElementById('status').textContent = 'マイクボタンを押して話しかけてください';
+  },
+  xhr => {
+    if (xhr.total) {
+      document.getElementById('status').textContent =
+        `VRM読み込み中 ${Math.round(xhr.loaded / xhr.total * 100)}%`;
+    }
+  },
+  err => {
+    console.error(err);
+    document.getElementById('status').textContent = 'assets/model.vrm が見つかりません';
+  }
+);
+
+// T字/万歳ポーズ → 自然な直立ポーズ
+// VRMのキャラクター左腕は+X方向に延びており、
+// 正のZ回転は上(万歳)方向、負のZ回転が下(自然)方向になる
+function applyRestPose(vrm) {
+  const h = vrm.humanoid;
+  if (!h) return;
+  // x: 腕を前に出してめり込みを防ぐ, z: 腕の下げ角度（68度）
+  const pose = [
+    ['leftUpperArm',  [0.15, 0, -Math.PI * 0.38]],
+    ['rightUpperArm', [0.15, 0,  Math.PI * 0.38]],
+    ['leftLowerArm',  [0, 0, -0.08]],
+    ['rightLowerArm', [0, 0,  0.08]],
+  ];
+  for (const [bone, [x, y, z]] of pose) {
+    const node = h.getNormalizedBoneNode(bone);
+    if (node) node.rotation.set(x, y, z);
+  }
+}
+
+// ── 音声再生 + リップシンク ───────────────────────────────────────
+
+const audioCtx  = new AudioContext();
+const analyser  = audioCtx.createAnalyser();
+analyser.fftSize = 256;
+analyser.connect(audioCtx.destination);
+const timeDomain = new Float32Array(analyser.fftSize);
+// ブラウザのautoplay制限を解除：最初のユーザー操作で再開
+document.addEventListener('click',     () => audioCtx.state === 'suspended' && audioCtx.resume(), { capture: true });
+document.addEventListener('touchstart', () => audioCtx.state === 'suspended' && audioCtx.resume(), { capture: true });
+
+const audioQueue = [];
+let isPlaying = false;
+
+function playNext() {
+  if (!audioQueue.length) { isPlaying = false; return; }
+  isPlaying = true;
+  audioCtx.decodeAudioData(audioQueue.shift(), buf => {
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.connect(analyser);
+    src.start();
+    src.onended = playNext;
+  });
+}
+
+function enqueueWav(arrayBuffer) {
+  audioQueue.push(arrayBuffer.slice(0));
+  if (!isPlaying) playNext();
+}
+
+function getLipValue() {
+  if (!isPlaying || audioCtx.state !== 'running') return 0;
+  analyser.getFloatTimeDomainData(timeDomain);
+  let sum = 0;
+  for (const v of timeDomain) sum += v * v;
+  return Math.min(1.0, Math.sqrt(sum / timeDomain.length) * 10);
+}
+
+// ── 波形エフェクト ────────────────────────────────────────────────
+
+const waveCanvas = document.getElementById('waveCanvas');
+const waveCtx    = waveCanvas.getContext('2d');
+waveCanvas.width  = 320;
+waveCanvas.height = 56;
+
+let vadAnalyser = null;
+let freqData    = null;
+
+function drawWaveform() {
+  waveCtx.clearRect(0, 0, waveCanvas.width, waveCanvas.height);
+  if (!vadAnalyser || !speaking) return;
+
+  vadAnalyser.getByteFrequencyData(freqData);
+
+  const barCount = 48;
+  const gap      = 2;
+  const barW     = (waveCanvas.width - gap * (barCount - 1)) / barCount;
+  const cx       = waveCanvas.width / 2;
+  const half     = barCount / 2;
+
+  for (let i = 0; i < barCount; i++) {
+    // 中心から外側に向かって対称配置
+    const idx    = Math.floor(Math.abs(i - half) / half * (freqData.length * 0.6));
+    const freq   = freqData[Math.min(idx, freqData.length - 1)];
+    const ratio  = freq / 255;
+    const h      = Math.max(3, ratio * waveCanvas.height);
+    const x      = i * (barW + gap);
+    const y      = (waveCanvas.height - h) / 2;
+
+    // 中心ほど明るい紫〜外側は青
+    const bright = 0.4 + ratio * 0.6;
+    waveCtx.fillStyle = `rgba(${Math.round(80 + 80 * ratio)}, 80, 255, ${bright})`;
+    waveCtx.beginPath();
+    waveCtx.roundRect(x, y, barW, h, 2);
+    waveCtx.fill();
+  }
+}
+
+// ── 泡パーティクル ────────────────────────────────────────────────
+const BUBBLE_N = 90;
+const _bGeo = new THREE.SphereGeometry(1, 7, 5);
+const _bMat = new THREE.MeshStandardMaterial({
+  color: 0x88ddff, emissive: 0x003366, emissiveIntensity: 0.4,
+  transparent: true, opacity: 0.22, roughness: 0.0, metalness: 0.5,
+  depthWrite: false,
+});
+const bubbleMesh = new THREE.InstancedMesh(_bGeo, _bMat, BUBBLE_N);
+bubbleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+scene.add(bubbleMesh);
+
+function _mkBubble(yOverride) {
+  return {
+    x: (Math.random() - 0.5) * 6,
+    y: yOverride ?? (Math.random() * 5 - 1.5),
+    z: (Math.random() - 0.5) * 4 - 0.3,
+    r: 0.012 + Math.random() * 0.055,
+    vy: 0.06 + Math.random() * 0.16,
+    drift: Math.random() * Math.PI * 2,
+    driftAmp: 0.06 + Math.random() * 0.12,
+    driftSpd: 0.3 + Math.random() * 0.6,
+  };
+}
+const _bubbles = Array.from({ length: BUBBLE_N }, () => _mkBubble());
+const _bDummy  = new THREE.Object3D();
+
+function updateBubbles(t, dt) {
+  for (let i = 0; i < BUBBLE_N; i++) {
+    const b = _bubbles[i];
+    b.y += b.vy * dt;
+    if (b.y > 3.8) _bubbles[i] = _mkBubble(-1.5);
+    _bDummy.position.set(
+      b.x + Math.sin(t * b.driftSpd + b.drift) * b.driftAmp,
+      b.y,
+      b.z,
+    );
+    _bDummy.scale.setScalar(b.r);
+    _bDummy.updateMatrix();
+    bubbleMesh.setMatrixAt(i, _bDummy.matrix);
+  }
+  bubbleMesh.instanceMatrix.needsUpdate = true;
+}
+
+// ── アニメーションループ ──────────────────────────────────────────
+
+const clock = new THREE.Clock();
+let elapsed   = 0;
+let lipSmooth = 0;
+
+// 瞬き
+let blinkTimer = 0;
+let blinkPhase = 0; // 0=待機 1=閉じ中 2=開き中
+let blinkValue = 0;
+let nextBlink  = 3 + Math.random() * 4;
+
+(function animate() {
+  requestAnimationFrame(animate);
+  const delta = clock.getDelta();
+  elapsed += delta;
+
+  if (vrm) {
+    // リップシンク
+    const lipTarget = getLipValue();
+    lipSmooth += (lipTarget - lipSmooth) * (1 - Math.exp(-delta * 18));
+    vrm.expressionManager?.setValue('aa', lipSmooth);
+
+    // 瞬き
+    blinkTimer += delta;
+    if (blinkPhase === 0 && blinkTimer >= nextBlink) {
+      blinkPhase = 1; blinkTimer = 0;
+      nextBlink = 3 + Math.random() * 4;
+    }
+    if (blinkPhase === 1) {
+      blinkValue = Math.min(1, blinkValue + delta * 12);
+      if (blinkValue >= 1) blinkPhase = 2;
+    } else if (blinkPhase === 2) {
+      blinkValue = Math.max(0, blinkValue - delta * 8);
+      if (blinkValue <= 0) blinkPhase = 0;
+    }
+    // blink / blinkLeft+Right の両方を試す（モデル依存）
+    vrm.expressionManager?.setValue('blink',      blinkValue);
+    vrm.expressionManager?.setValue('blinkLeft',  blinkValue);
+    vrm.expressionManager?.setValue('blinkRight', blinkValue);
+
+    // 上半身のゆらゆら
+    const spine = vrm.humanoid?.getNormalizedBoneNode('spine');
+    const chest = vrm.humanoid?.getNormalizedBoneNode('chest');
+    if (spine) spine.rotation.z = Math.sin(elapsed * 0.8) * 0.04;
+    if (chest) chest.rotation.z = Math.sin(elapsed * 0.8 + 0.5) * 0.02;
+
+    // 腕の揺れ（左右で位相をずらして自然に）
+    const lUA = vrm.humanoid?.getNormalizedBoneNode('leftUpperArm');
+    const rUA = vrm.humanoid?.getNormalizedBoneNode('rightUpperArm');
+    if (lUA) { lUA.rotation.x = 0.15; lUA.rotation.z = -Math.PI * 0.38 + Math.sin(elapsed * 0.7) * 0.05; }
+    if (rUA) { rUA.rotation.x = 0.15; rUA.rotation.z =  Math.PI * 0.38 + Math.sin(elapsed * 0.7 + Math.PI) * 0.05; }
+
+    vrm.update(delta);
+  }
+  updateBubbles(elapsed, delta);
+  drawWaveform();
+  renderer.render(scene, camera);
+})();
+
+// ── WebSocket ────────────────────────────────────────────────────
+
+const ws = new WebSocket(`ws://${location.host}/ws`);
+ws.binaryType = 'arraybuffer';
+ws.onopen = () => {
+  // 接続時に現在選択中の話者をバックエンドへ通知
+  if (speakerSelect.value)
+    ws.send(JSON.stringify({ type: 'set_speaker', speaker: parseInt(speakerSelect.value) }));
+};
+
+const transcriptEl = document.getElementById('transcript');
+const responseEl   = document.getElementById('response');
+const micBtn       = document.getElementById('micBtn');
+const statusEl     = document.getElementById('status');
+const micSelect    = document.getElementById('micSelect');
+
+ws.onmessage = e => {
+  if (e.data instanceof ArrayBuffer) {
+    enqueueWav(e.data);
+    return;
+  }
+  const msg = JSON.parse(e.data);
+  if (msg.type === 'transcript') {
+    transcriptEl.textContent = `あなた: ${msg.text}`;
+    responseEl.textContent   = 'AI: ';
+  } else if (msg.type === 'llm_text') {
+    responseEl.textContent += msg.text;
+  } else if (msg.type === 'done') {
+    processing = false;
+    micBtn.className = '';
+    statusEl.textContent = '話しかけてください（自動検知）';
+    // Restart MediaRecorder now that processing=false — fresh WebM header chunk
+    // will be sent immediately (ondataavailable gate is !processing)
+    if (mediaRecorder && mediaRecorder.state === 'inactive') {
+      mediaRecorder.start(200);
+    }
+  }
+};
+ws.onerror = () => { statusEl.textContent = 'WebSocket接続エラー'; };
+
+// ── マイク録音 + デバイス選択 + エネルギーVAD ────────────────────
+
+let mediaRecorder  = null;
+let currentStream  = null;
+let speaking       = false;
+let processing     = false;
+let silenceTimer   = null;
+let selectedDevice = '';
+
+const VAD_THRESHOLD = 0.012;
+const SILENCE_MS    = 1500;
+
+async function populateDeviceList() {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const inputs  = devices.filter(d => d.kind === 'audioinput');
+  micSelect.innerHTML = '';
+  inputs.forEach(d => {
+    const opt   = document.createElement('option');
+    opt.value   = d.deviceId;
+    opt.text    = d.label || `マイク ${micSelect.options.length + 1}`;
+    if (d.deviceId === selectedDevice) opt.selected = true;
+    micSelect.appendChild(opt);
+  });
+}
+
+async function startMic(deviceId) {
+  // 既存ストリームを止める
+  if (currentStream) {
+    currentStream.getTracks().forEach(t => t.stop());
+    if (mediaRecorder?.state !== 'inactive') mediaRecorder.stop();
+  }
+
+  currentStream = await navigator.mediaDevices.getUserMedia({
+    audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+  });
+
+  // VAD 解析用
+  const vadCtx = new AudioContext();
+  const vadSrc = vadCtx.createMediaStreamSource(currentStream);
+  vadAnalyser  = vadCtx.createAnalyser();
+  vadAnalyser.fftSize = 256;
+  freqData     = new Uint8Array(vadAnalyser.frequencyBinCount);
+  vadSrc.connect(vadAnalyser);
+
+  // MediaRecorder
+  mediaRecorder = new MediaRecorder(currentStream, { mimeType: 'audio/webm;codecs=opus' });
+  mediaRecorder.ondataavailable = e => {
+    // processing 中は送らない。それ以外は常に送る（WebMヘッダーを含む先頭チャンクを捨てないため）
+    if (e.data.size > 0 && !processing && ws.readyState === WebSocket.OPEN) {
+      ws.send(e.data);
+    }
+  };
+  mediaRecorder.start(200);
+
+  // VAD ループ
+  const vadBuf = new Float32Array(vadAnalyser.fftSize);
+  function vadLoop() {
+    if (!processing) {
+      vadAnalyser.getFloatTimeDomainData(vadBuf);
+      let sum = 0;
+      for (const v of vadBuf) sum += v * v;
+      const rms = Math.sqrt(sum / vadBuf.length);
+
+      if (rms > VAD_THRESHOLD) {
+        if (!speaking) {
+          speaking = true;
+          micBtn.className = 'listening';
+          waveCanvas.classList.add('active');
+          statusEl.textContent = '🔴 認識中...';
+        }
+        clearTimeout(silenceTimer);
+        silenceTimer = setTimeout(() => {
+          if (speaking) {
+            speaking = false;
+            // processing=true にするのは onstop 後 — こうしないと
+            // ondataavailable（最終チャンク）が processing=true でブロックされる
+            waveCanvas.classList.remove('active');
+            micBtn.className = 'processing';
+            statusEl.textContent = '処理中...';
+
+            mediaRecorder.onstop = () => {
+              processing = true;               // 最終チャンク送信完了後に処理中フラグ
+              ws.send(JSON.stringify({ type: 'end_speech' }));
+              // MediaRecorder の再起動は done 受信後に行う（ここで start すると
+              // ヘッダーチャンクが processing=true でブロックされてしまう）
+            };
+            mediaRecorder.stop();
+          }
+        }, SILENCE_MS);
+      }
+    }
+    requestAnimationFrame(vadLoop);
+  }
+  vadLoop();
+}
+
+// デバイス変更
+micSelect.addEventListener('change', async () => {
+  selectedDevice = micSelect.value;
+  if (mediaRecorder) await startMic(selectedDevice);
+});
+
+// 最初のクリックで起動
+micBtn.addEventListener('click', async () => {
+  if (audioCtx.state === 'suspended') await audioCtx.resume();
+  if (!mediaRecorder) {
+    try {
+      await startMic('');
+      await populateDeviceList();
+      statusEl.textContent = '話しかけてください（自動検知）';
+    } catch (err) {
+      statusEl.textContent = 'マイクへのアクセスが拒否されました';
+      console.error(err);
+    }
+  }
+});
+
+// ── 設定パネル ────────────────────────────────────────────────────
+
+const settingsBtn   = document.getElementById('settingsBtn');
+const settingsPanel = document.getElementById('settingsPanel');
+const modelSelect   = document.getElementById('modelSelect');
+const speakerSelect = document.getElementById('speakerSelect');
+const speakerGroup  = document.getElementById('speakerGroup');
+
+// パネル開閉
+settingsBtn.addEventListener('click', () => settingsPanel.classList.toggle('open'));
+document.addEventListener('click', e => {
+  if (!settingsPanel.contains(e.target) && e.target !== settingsBtn) {
+    settingsPanel.classList.remove('open');
+  }
+});
+
+// Ollamaモデル一覧を取得して反映
+fetch('/models').then(r => r.json()).then(models => {
+  modelSelect.innerHTML = '';
+  models.forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m; opt.text = m;
+    modelSelect.appendChild(opt);
+  });
+}).catch(() => {
+  modelSelect.innerHTML = '<option>取得失敗</option>';
+});
+
+// VoiceVox話者一覧を取得して反映
+fetch('/speakers').then(r => r.json()).then(speakers => {
+  speakerSelect.innerHTML = '';
+  speakers.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.id; opt.text = s.name;
+    speakerSelect.appendChild(opt);
+  });
+  if (speakers.length === 0) { speakerSelect.innerHTML = '<option>話者なし</option>'; return; }
+  // 小夜をデフォルト選択し、バックエンドへ通知
+  const sayo = speakers.find(s => s.id === 46);
+  if (sayo) {
+    speakerSelect.value = 46;
+    if (ws.readyState === WebSocket.OPEN)
+      ws.send(JSON.stringify({ type: 'set_speaker', speaker: 46 }));
+  }
+}).catch(() => {
+  speakerSelect.innerHTML = '<option>取得失敗</option>';
+});
+
+// TTS エンジン変更
+document.querySelectorAll('input[name="tts"]').forEach(radio => {
+  radio.addEventListener('change', () => {
+    speakerGroup.style.display = radio.value === 'voicevox' ? '' : 'none';
+    if (ws.readyState === WebSocket.OPEN)
+      ws.send(JSON.stringify({ type: 'set_tts', engine: radio.value }));
+  });
+});
+
+// 話者変更
+speakerSelect.addEventListener('change', () => {
+  if (ws.readyState === WebSocket.OPEN)
+    ws.send(JSON.stringify({ type: 'set_speaker', speaker: parseInt(speakerSelect.value) }));
+});
+
+// モデル変更
+modelSelect.addEventListener('change', () => {
+  if (ws.readyState === WebSocket.OPEN)
+    ws.send(JSON.stringify({ type: 'set_model', model: modelSelect.value }));
+});
+</script>
+</body>
+</html>
