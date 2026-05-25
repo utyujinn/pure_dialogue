@@ -86,13 +86,42 @@ canvas#canvas { display: block; }
 
 #status {
   position: fixed;
-  top: 12px; left: 50%;
+  top: 46px; left: 50%;
   transform: translateX(-50%);
   font-size: 13px;
   color: #fff;
   text-shadow: 0 1px 4px rgba(0,0,0,0.5);
   pointer-events: none;
+  white-space: nowrap;
 }
+
+/* モードインジケータ */
+#modeIndicator {
+  position: fixed;
+  top: 12px; left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0,0,0,0.4);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 13px;
+  pointer-events: none;
+  transition: background 0.4s, border-color 0.4s;
+}
+#modeIndicator.human {
+  background: rgba(0,180,100,0.25);
+  border-color: rgba(0,220,120,0.5);
+}
+#modeDot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #aaa;
+  transition: background 0.4s;
+}
+#modeIndicator.human #modeDot { background: #44ee88; }
 
 /* 設定ボタン */
 #settingsBtn {
@@ -226,6 +255,11 @@ select.panel-select option {
   <div id="response"></div>
 </div>
 <div id="status">VRMを読み込み中...</div>
+
+<div id="modeIndicator">
+  <div id="modeDot"></div>
+  <span id="modeText">AI</span>
+</div>
 
 <!-- 設定ボタン -->
 <button id="settingsBtn" title="設定">⚙️</button>
@@ -727,17 +761,29 @@ ws.onmessage = e => {
     return;
   }
   const msg = JSON.parse(e.data);
+  const modeIndicator = document.getElementById('modeIndicator');
+  const modeText      = document.getElementById('modeText');
+
   if (msg.type === 'transcript') {
     transcriptEl.textContent = `あなた: ${msg.text}`;
-    responseEl.textContent   = 'AI: ';
+    // AI モードのときだけ responseEl をリセット（human では peer_text が入る）
+    if (!modeIndicator.classList.contains('human'))
+      responseEl.textContent = 'AI: ';
   } else if (msg.type === 'llm_text') {
     responseEl.textContent += msg.text;
+  } else if (msg.type === 'peer_text') {
+    responseEl.textContent = `相手: ${msg.text}`;
+  } else if (msg.type === 'mode') {
+    const isHuman = msg.mode === 'human';
+    modeIndicator.classList.toggle('human', isHuman);
+    modeText.textContent = isHuman ? `通話中 (${msg.users}人)` : 'AI';
+    if (isHuman) {
+      statusEl.textContent = '相手と接続しました';
+    }
   } else if (msg.type === 'done') {
     processing = false;
     micBtn.className = '';
     statusEl.textContent = '話しかけてください（自動検知）';
-    // Restart MediaRecorder now that processing=false — fresh WebM header chunk
-    // will be sent immediately (ondataavailable gate is !processing)
     if (mediaRecorder && mediaRecorder.state === 'inactive') {
       mediaRecorder.start(200);
     }

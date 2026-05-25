@@ -342,19 +342,60 @@ async def stream_llm_and_tts(
     return full_response
 
 
+# ── 接続レジストリ ────────────────────────────────────────────────
+
+# ws → per-connection state（tts_engine, speaker を中継時に参照するため外部から見える）
+_connections: dict["WebSocket", dict] = {}
+
+
+async def _broadcast_mode() -> None:
+    count = len(_connections)
+    msg = {"type": "mode", "mode": "human" if count >= 2 else "ai", "users": count}
+    for conn in list(_connections):
+        try:
+            await conn.send_json(msg)
+        except Exception:
+            pass
+
+
+async def _relay_to_peers(
+    sender: "WebSocket",
+    transcript: str,
+    sender_state: dict,
+    loop: asyncio.AbstractEventLoop,
+) -> None:
+    peers = [(w, s) for w, s in _connections.items() if w is not sender]
+    if not peers:
+        return
+    wav = await synthesize(transcript, sender_state["tts"], loop, sender_state["speaker"])
+    for peer_ws, _ in peers:
+        try:
+            await peer_ws.send_json({"type": "peer_text", "text": transcript})
+            if wav:
+                await peer_ws.send_bytes(wav)
+        except Exception as e:
+            log.warning("relay to peer failed: %s", e)
+
+
 # ── WebSocket ─────────────────────────────────────────────────────
 
 @app.websocket("/ws")
 async def websocket_handler(ws: WebSocket):
     await ws.accept()
-    current_persona  = DEFAULT_PERSONA
-    current_affinity = 50
-    history          = [{"role": "system", "content": build_system_prompt(current_persona, current_affinity)}]
-    audio_buf        = bytearray()
-    loop             = asyncio.get_event_loop()
-    tts_engine       = "voicevox"
-    ollama_model     = OLLAMA_MODEL_DEFAULT
-    voicevox_speaker = VOICEVOX_SPEAKER
+
+    state: dict = {
+        "persona":  DEFAULT_PERSONA,
+        "affinity": 50,
+        "tts":      "voicevox",
+        "model":    OLLAMA_MODEL_DEFAULT,
+        "speaker":  VOICEVOX_SPEAKER,
+    }
+    history   = [{"role": "system", "content": build_system_prompt(state["persona"], state["affinity"])}]
+    audio_buf = bytearray()
+    loop      = asyncio.get_event_loop()
+
+    _connections[ws] = state
+    await _broadcast_mode()
 
     try:
         while True:
@@ -367,38 +408,39 @@ async def websocket_handler(ws: WebSocket):
                 continue
 
             data = json.loads(msg.get("text", "{}"))
+            t = data.get("type")
 
-            if data.get("type") == "set_tts":
-                tts_engine = data.get("engine", "irodori")
-                log.info("TTS engine → %s", tts_engine)
+            if t == "set_tts":
+                state["tts"] = data.get("engine", "irodori")
+                log.info("TTS engine → %s", state["tts"])
                 continue
 
-            if data.get("type") == "set_model":
-                ollama_model = data.get("model", OLLAMA_MODEL_DEFAULT)
-                log.info("Ollama model → %s", ollama_model)
+            if t == "set_model":
+                state["model"] = data.get("model", OLLAMA_MODEL_DEFAULT)
+                log.info("Ollama model → %s", state["model"])
                 continue
 
-            if data.get("type") == "set_speaker":
-                voicevox_speaker = int(data.get("speaker", VOICEVOX_SPEAKER))
-                log.info("VoiceVox speaker → %d", voicevox_speaker)
+            if t == "set_speaker":
+                state["speaker"] = int(data.get("speaker", VOICEVOX_SPEAKER))
+                log.info("VoiceVox speaker → %d", state["speaker"])
                 continue
 
-            if data.get("type") == "set_affinity":
-                current_affinity = min(100, max(0, int(data.get("value", 50))))
+            if t == "set_affinity":
+                state["affinity"] = min(100, max(0, int(data.get("value", 50))))
                 if history:
-                    history[0] = {"role": "system", "content": build_system_prompt(current_persona, current_affinity)}
-                log.info("affinity → %d", current_affinity)
+                    history[0] = {"role": "system", "content": build_system_prompt(state["persona"], state["affinity"])}
+                log.info("affinity → %d", state["affinity"])
                 continue
 
-            if data.get("type") == "set_persona":
+            if t == "set_persona":
                 pid = data.get("persona", DEFAULT_PERSONA)
                 if pid in PERSONAS:
-                    current_persona = pid
-                    history = [{"role": "system", "content": build_system_prompt(pid, current_affinity)}]
+                    state["persona"] = pid
+                    history = [{"role": "system", "content": build_system_prompt(pid, state["affinity"])}]
                     log.info("persona → %s", pid)
                 continue
 
-            if data.get("type") != "end_speech":
+            if t != "end_speech":
                 continue
 
             if not audio_buf:
@@ -419,13 +461,22 @@ async def websocket_handler(ws: WebSocket):
                     continue
 
                 await ws.send_json({"type": "transcript", "text": transcript})
-                history.append({"role": "user", "content": transcript})
-                full_resp = await stream_llm_and_tts(ws, loop, history, tts_engine, ollama_model, voicevox_speaker)
-                delta = await evaluate_affinity(transcript, full_resp, ollama_model)
-                try:
-                    await ws.send_json({"type": "affinity", "delta": delta})
-                except Exception:
-                    pass
+
+                if len(_connections) >= 2:
+                    # ── human-to-human モード ──────────────────────
+                    await ws.send_json({"type": "done"})
+                    await _relay_to_peers(ws, transcript, state, loop)
+                else:
+                    # ── AI モード ──────────────────────────────────
+                    history.append({"role": "user", "content": transcript})
+                    full_resp = await stream_llm_and_tts(
+                        ws, loop, history, state["tts"], state["model"], state["speaker"]
+                    )
+                    delta = await evaluate_affinity(transcript, full_resp, state["model"])
+                    try:
+                        await ws.send_json({"type": "affinity", "delta": delta})
+                    except Exception:
+                        pass
 
             except WebSocketDisconnect:
                 raise
@@ -438,3 +489,6 @@ async def websocket_handler(ws: WebSocket):
 
     except WebSocketDisconnect:
         pass
+    finally:
+        _connections.pop(ws, None)
+        await _broadcast_mode()
