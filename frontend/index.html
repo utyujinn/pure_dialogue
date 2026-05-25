@@ -561,11 +561,9 @@ const timeDomain = new Float32Array(analyser.fftSize);
 // ブラウザのautoplay制限を解除：最初のユーザー操作で再開
 document.addEventListener('click', () => {
   audioCtx.state === 'suspended' && audioCtx.resume();
-  if (callAudioCtx && callAudioCtx.state === 'suspended') callAudioCtx.resume();
 }, { capture: true });
 document.addEventListener('touchstart', () => {
   audioCtx.state === 'suspended' && audioCtx.resume();
-  if (callAudioCtx && callAudioCtx.state === 'suspended') callAudioCtx.resume();
 }, { capture: true });
 
 const audioQueue = [];
@@ -810,56 +808,45 @@ function spawnAffinityParticles() {
 }
 
 // ── 通話音声 (Web Audio API — 生 PCM タイムスタンプ連結再生) ────────
+// パケット形式: [4 bytes Uint32LE: 送信側 sampleRate][Float32[] PCM]
+// → 固定レートを使わず実測値を送ることで iOS/PC 間のレート不一致を解消
 
 let isInCall     = false;
-let callAudioCtx = null;
 let nextPlayTime = 0;
-const CALL_SAMPLE_RATE = 48000; // 送受信共通レート
+const LATENCY_THRESHOLD = 0.15;
 
 function initCallAudio() {
-  // ボタンクリック（ユーザージェスチャ）で preinitCallAudio() が先に呼ばれている場合は再利用
-  if (!callAudioCtx || callAudioCtx.state === 'closed') {
-    callAudioCtx = new AudioContext({ sampleRate: CALL_SAMPLE_RATE });
-    nextPlayTime = 0;
-  }
-  callAudioCtx.resume().catch(() => {});
+  audioCtx.resume().catch(() => {});
+  nextPlayTime = 0;
 }
 
-// ユーザージェスチャ内で呼ぶ：モバイルの autoplay 制限を回避するため事前にコンテキストを作成
 function preinitCallAudio() {
-  if (!callAudioCtx || callAudioCtx.state === 'closed') {
-    callAudioCtx = new AudioContext({ sampleRate: CALL_SAMPLE_RATE });
-    nextPlayTime = 0;
-  }
-  callAudioCtx.resume().catch(() => {});
+  audioCtx.resume().catch(() => {});
 }
 
 function enqueuePcmChunk(arrayBuffer) {
-  if (!callAudioCtx) return;
-  if (callAudioCtx.state === 'suspended') callAudioCtx.resume();
-  const pcm = new Float32Array(arrayBuffer);
-  if (!pcm.length) return;
-  const buf = callAudioCtx.createBuffer(1, pcm.length, CALL_SAMPLE_RATE);
+  if (arrayBuffer.byteLength < 8) return;
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  // 先頭 4 バイト = 送信側の実際のサンプルレート
+  const senderRate = new DataView(arrayBuffer).getUint32(0, true);
+  const pcm = new Float32Array(arrayBuffer, 4);
+  if (!pcm.length || senderRate < 8000 || senderRate > 192000) return;
+  const buf = audioCtx.createBuffer(1, pcm.length, senderRate);
   buf.copyToChannel(pcm, 0);
-  const src = callAudioCtx.createBufferSource();
+  const src = audioCtx.createBufferSource();
   src.buffer = buf;
-  src.connect(callAudioCtx.destination);
-  const now = callAudioCtx.currentTime;
-  // スケジュールが遅れていたらリセット（ネットワーク遅延吸収バッファ 50ms）
-  if (nextPlayTime < now) nextPlayTime = now + 0.05;
+  src.connect(analyser);
+  const now = audioCtx.currentTime;
+  // 遅延が蓄積したらリセット（引き伸ばし・無音化を防ぐ）
+  if (nextPlayTime < now || (nextPlayTime - now) > LATENCY_THRESHOLD) nextPlayTime = now + 0.05;
   src.start(nextPlayTime);
   nextPlayTime += buf.duration;
 }
 
 function teardownCallAudio() {
-  // 通話終了直後に届く残留 PCM チャンクが WAV キューを汚さないよう先にクリア
   audioQueue.length = 0;
   isPlaying = false;
-  if (callAudioCtx && callAudioCtx.state !== 'closed') {
-    callAudioCtx.close();
-  }
-  callAudioCtx = null;
-  nextPlayTime  = 0;
+  nextPlayTime = 0;
 }
 
 // ── WebSocket ────────────────────────────────────────────────────
@@ -1006,8 +993,8 @@ async function startMic(deviceId) {
     audio: deviceId ? { deviceId: { exact: deviceId } } : true,
   });
 
-  // VAD + 通話送信 用 AudioContext（CALL_SAMPLE_RATE 固定でレートを統一）
-  const vadCtx = new AudioContext({ sampleRate: CALL_SAMPLE_RATE });
+  // VAD + 通話送信 用 AudioContext（ネイティブレート — 強制指定しない）
+  const vadCtx = new AudioContext();
   const vadSrc = vadCtx.createMediaStreamSource(currentStream);
   vadAnalyser  = vadCtx.createAnalyser();
   vadAnalyser.fftSize = 256;
@@ -1015,11 +1002,16 @@ async function startMic(deviceId) {
   vadSrc.connect(vadAnalyser);
 
   // ScriptProcessorNode: 通話中に生 PCM を ~20ms 単位で即送信
+  // パケット = [4 bytes: 実 sampleRate (Uint32LE)][Float32[] PCM]
   const callProc = vadCtx.createScriptProcessor(1024, 1, 1);
   callProc.onaudioprocess = e => {
     if (!isInCall || ws.readyState !== WebSocket.OPEN) return;
-    const pcm = new Float32Array(e.inputBuffer.getChannelData(0)); // コピー必須
-    ws.send(pcm.buffer);
+    const pcm  = e.inputBuffer.getChannelData(0); // Float32Array (view)
+    const rate = vadCtx.sampleRate;               // 実際のサンプルレート
+    const packet = new ArrayBuffer(4 + pcm.byteLength);
+    new DataView(packet).setUint32(0, rate, true); // LE
+    new Float32Array(packet, 4).set(pcm);
+    ws.send(packet);
   };
   vadSrc.connect(callProc);
   callProc.connect(vadCtx.destination); // ダミー接続（ノードを動かすために必要）
