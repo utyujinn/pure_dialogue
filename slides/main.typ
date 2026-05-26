@@ -52,9 +52,9 @@
   place(top,
     rect(width: 100%, height: 48pt, fill: bg2,
       stroke: (bottom: 1pt + accent.transparentize(55%))))
-  place(top + left,  dx: 28pt, dy: 10pt,
+  place(top + left,  dx: 28pt, dy: 16pt,
     text(size: 20pt, weight: "bold", fill: fg, header))
-  place(top + right, dx: -20pt, dy: 14pt,
+  place(top + right, dx: -20pt, dy: 16pt,
     text(size: 12pt, fill: muted, "PURE DIALOGUE"))
   block(width: 100%, height: 100%,
     inset: (top: 58pt, x: 28pt, bottom: 16pt),
@@ -115,8 +115,8 @@
 
 // 1. タイトル
 #title-slide(
-  "属性ゼロからの\n純粋対話",
-  subtitle: "AI・人間シームレス統合コミュニケーションプラットフォーム",
+  "声も、立場も、過去も\n脱ぎ捨てる。",
+  subtitle: "AI・人間シームレス統合コミュニケーションプラットフォーム「Pure Dialogue」",
   author: "石橋憲尚",
   date: "2026-05-25",
 )
@@ -146,7 +146,7 @@
       #v(6pt)
       #text(size: 15pt, fill: muted)[不登校児童数（過去最多）2025年]
       #v(20pt)
-      #text(size: 48pt, weight: "black", fill: accent2)[2.2万人]
+      #text(size: 48pt, weight: "black", fill: accent2)[7.6万人]
       #v(6pt)
       #text(size: 15pt, fill: muted)[年間孤独死者数（65歳以上）2025年]
     ]
@@ -179,7 +179,7 @@
       #set text(size: 16pt)
       - プロフィールアイコン必須
       - フォロワー数・認知度の可視化
-      - 生声での音声通話
+      - 他人との深いかかわり
       - 即興レスポンスの圧力
     ]
   ][
@@ -239,47 +239,90 @@
   ]
 ]
 
-// 6. 最大のイノベーション
-#slide("最大のイノベーション：AI・人間シームレス統合")[
-  #grid(columns: (1fr, 1fr), gutter: 16pt)[
+// 6. 誰のためのプラットフォームか
+#slide("誰のための空間か")[
+  #grid(columns: (1fr, 1fr, 1fr), gutter: 12pt)[
     #card-box[
-      #text(fill: accent, weight: "bold")[一人の時は AI が寄り添う]
+      #align(center)[#text(size: 26pt, fill: accent, weight: "black")[安心]]
+      #v(4pt)
+      #text(fill: accent, weight: "bold")[トラウマ・社会不安を持つ人へ]
       #v(6pt)
-      #set text(size: 16pt)
-      孤独な時間も AI アバターが常に傍に。\
-      心理的負担なく、いつでも対話を始められる安心感
-    ]
-    #v(10pt)
-    #card-box[
-      #text(fill: accent2, weight: "bold")[複数人時は人間へシームレス移行]
-      #v(6pt)
-      #set text(size: 16pt)
-      他のユーザーがいる時は自然に人間同士の対話へ。\
-      *ユーザーは気づかないうちに段階的に*他者との交流へ移行
+      #set text(size: 14pt)
+      叱責・罵倒されるリスクを最小化。#linebreak()
+      AI の穏やかな応答から始め、#linebreak()
+      少しずつ心を開いていける。
     ]
   ][
-    #v(10pt)
-    #text(fill: muted, size: 14pt)[UX 体験の流れ]
-    #v(8pt)
-    #let step(n, title, desc) = grid(
-      columns: (32pt, 1fr), gutter: 8pt,
-      align(center, text(fill: accent, weight: "black", size: 18pt)[#n]),
-      block[
-        #text(weight: "bold")[#title] #linebreak()
-        #text(fill: muted, size: 14pt)[#desc]
-      ],
-    )
-    #step("1", "安心", "AI との対話で心を開く")
-    #v(6pt)
-    #step("2", "慣れ", "対話スキルを自然に習得")
-    #v(6pt)
-    #step("3", "移行", "気づかぬうちに人間と対話")
-    #v(6pt)
-    #step("4", "成長", "対人不安を克服し交流拡大")
+    #card-box[
+      #align(center)[#text(size: 26pt, fill: accent2, weight: "black")[平等]]
+      #v(4pt)
+      #text(fill: accent2, weight: "bold")[声にコンプレックスがある人へ]
+      #v(6pt)
+      #set text(size: 14pt)
+      TTS で全員の声が統一されるため#linebreak()
+      地声を晒す必要がない。#linebreak()
+      「声」ではなく「言葉」で向き合える。
+    ]
+  ][
+    #card-box[
+      #align(center)[#text(size: 26pt, fill: rgb("#44ee88"), weight: "black")[共生]]
+      #v(4pt)
+      #text(fill: rgb("#44ee88"), weight: "bold")[世代を超えた対話]
+      #v(6pt)
+      #set text(size: 14pt)
+      老若男女が属性を超えてフラットに対話。#linebreak()
+      世代間理解が深まり、#linebreak()
+      助け合う意識が自然と芽生える。
+    ]
+  ]
+  #v(18pt)
+  #align(center)[
+    #text(size: 18pt, fill: fg, weight: "bold")[
+      #text(fill: accent)[だれもが]、最初の一歩を踏み出せる空間。
+    ]
   ]
 ]
 
-// 7. デモ・スクリーンショット（旧「何を作ったか」）
+// 7. 最大のイノベーション
+#slide("最大のイノベーション：対人コミュニケーションのリハビリ")[
+  #grid(columns: (3fr, 2fr), gutter: 20pt)[
+    #let step(n, col, title, desc) = block(
+      fill: col.transparentize(88%),
+      stroke: 0.5pt + col.transparentize(60%),
+      inset: 10pt, radius: 7pt, width: 100%,
+      grid(columns: (28pt, 1fr), gutter: 8pt,
+        align(center, text(fill: col, weight: "black", size: 20pt)[#n]),
+        block[
+          #text(weight: "bold", fill: col)[#title] #linebreak()
+          #text(fill: fg, size: 15pt)[#desc]
+        ],
+      )
+    )
+    #step("1", accent,        "安心",  [AI 相手に、安全な場所で心を開く])
+    #v(8pt)
+    #step("2", accent2,       "慣れ",  [同じ画面・同じ声のまま、裏が人間に切り替わる])
+    #v(8pt)
+    #step("3", rgb("#44ee88"), "気づき", [「もしかして…人間？」と思ったときには繋がれている])
+    #v(8pt)
+    #step("4", fg,            "成長",  [対人不安を克服し、交流が広がる])
+  ][
+    #v(8pt)
+    #card-box[
+      #text(fill: accent2, weight: "bold")[なぜ 既存SNS ではダメか]
+      #v(6pt)
+      #set text(size: 15pt)
+      多くのSNS は「すでに話せる人」向け。#linebreak()
+      #v(4pt)
+      Pure Dialogue は「まだ話せない人」が #linebreak()
+      *気づかないうちに* 踏み出せる設計。
+      #v(6pt)
+      共通の 3D 空間・親密度・AI の温かさが #linebreak()
+      セーフティネットになっている。
+    ]
+  ]
+]
+
+// 8. デモ・スクリーンショット（旧「何を作ったか」）
 #slide("デモ：リアルタイム対話")[
   #grid(columns: (1fr, 1fr), gutter: 16pt)[
     #v(6pt)
@@ -293,10 +336,6 @@
       - 統一アバターで自然な対話体験
       - 心理的障壁のない安心コミュニケーション
     ]
-    #v(10pt)
-    #badge(accent2, "ビルド不要") #h(5pt)
-    #badge(accent, "単一 HTML") #h(5pt)
-    #badge(rgb("#44cc88"), "外部公開済み")
   ][
     #align(center)[
       #image("fig/screenshot.png", width: 100%)
@@ -305,269 +344,130 @@
   ]
 ]
 
-// 8. システム全体構成
-#slide("システム全体構成")[
+// 9. 技術アーキテクチャ
+#slide("技術アーキテクチャ")[
   #align(center + horizon)[
-    #image("fig/architecture.png", width: 88%)
+    #image("fig/architecture.png", width: 95%)
   ]
 ]
 
-// 9. パイプラインの流れ
-#slide("パイプラインの流れ")[
-  #set text(size: 16pt)
-  #let row(label, desc) = grid(
-    columns: (110pt, 1fr),
-    gutter: 0pt,
-    block(inset: (bottom: 11pt), text(fill: accent2, weight: "bold", label)),
-    block(inset: (bottom: 11pt), desc),
+// 10. 機能紹介
+#let feat-img(path, label, col, max-h: none) = block(width: 100%)[
+  #block(
+    stroke: 1pt + col.transparentize(60%),
+    radius: 6pt,
+    clip: true,
+    width: 100%,
+    ..if max-h != none { (height: max-h) },
+    if max-h != none {
+      image(path, width: 100%, height: 100%, fit: "contain")
+    } else {
+      image(path, width: 100%)
+    },
   )
-  #row("◆ マイク",   "MediaRecorder で WebM/Opus を 200ms ごとに WebSocket 送信")
-  #row("◆ STT",      "ffmpeg で PCM 変換 → faster-whisper (small, int8) で日本語認識")
-  #row("◆ LLM",      "Ollama (gemma4) へストリーミング問い合わせ。文末が来た時点で TTS へ")
-  #row("◆ TTS",      "VoiceVox Engine (Windows) または IrodoriTTS (WSL) が WAV を生成")
-  #row("◆ 描画",     "Three.js + three-vrm でリップシンク・瞬きをフレームごとに制御")
-  #row("◆ 親密度",   "応答後に別途 LLM を呼び出し +1/0/−1 を評価。Cookie で永続化")
+  #align(center, text(fill: col, size: 12pt, weight: "bold")[#label])
 ]
 
-// 10. 音声入力
-#slide("音声入力：VAD と WebM の罠")[
-  #grid(columns: (1fr, 1fr), gutter: 16pt)[
-    #text(fill: accent, weight: "bold")[VAD（音声区間検出）]
-    #v(4pt)
-    #card-box[
-      #set text(size: 16pt)
-      AnalyserNode で RMS を毎フレーム計算
-      - RMS > 0.012 → 発話開始
-      - 1500ms 無音継続 → 発話終了
-      - サーバーでも `vad_filter=True`
-    ]
-    #v(8pt)
-    #text(fill: accent2, weight: "bold")[Whisper ハルシネーション対策]
-    #card-box[
-      #set text(size: 16pt)
-      無音時に幻覚テキストを出力する既知問題
-      「*ご視聴ありがとうございました*」など #linebreak()
-      → フィルタリストで検知してスキップ
+#slide("実装した主な機能")[
+  // 左(2fr)：ペルソナ | リップシンク＋親密度　右(1fr)：音声モデル縦長
+  #grid(columns: (2fr, 1fr), gutter: 14pt)[
+    // 左：ペルソナ(左列) と リップシンク＋親密度(右列) を横並び
+    #grid(columns: (1fr, 1fr), gutter: 10pt)[
+      #feat-img("fig/persona.png", "ペルソナ切り替え（6種）", accent, max-h: 160pt)
+      #v(8pt)
+      #feat-img("fig/model.png", "AI モデル選択", accent2, max-h: 130pt)
+    ][
+      #feat-img("fig/lipsync.png", "リップシンク", accent)
+      #v(8pt)
+      #feat-img("fig/affinity.png", "親密度システム", accent2, max-h: 140pt)
     ]
   ][
-    #text(fill: accent, weight: "bold")[WebM EBML ヘッダー問題]
-    #v(4pt)
-    #card-box[
-      #set text(size: 16pt)
-      先頭チャンクにのみコンテナヘッダーが含まれる #linebreak()
-      途中チャンクだけでは ffmpeg がデコードできない
-    ]
-    #v(8pt)
-    #text(fill: accent2, weight: "bold")[解決策]
-    #card-box[
-      #set text(size: 16pt)
-      `done` 受信後に `MediaRecorder` を再起動 #linebreak()
-      → ヘッダーを再送させる
+    // 右：音声モデル選択 を縦長1枚
+    #feat-img("fig/soundmodel.png", "音声モデル選択", accent2, max-h: 350pt)
+  ]
+]
 
-      ```
-      stop() → end_speech
-                  ← done
-      start() → chunk（ヘッダー付き）
-      ```
+// 11. 機能詳細
+#slide("注目機能の詳細")[
+  #set text(size: 13pt)
+  #set par(leading: 0.55em, spacing: 0.7em)
+  #let feat(col, title, body) = block(
+    stroke: (left: 3pt + col),
+    inset: (left: 10pt, top: 2pt, bottom: 2pt),
+    width: 100%,
+  )[
+    #text(fill: col, weight: "bold", size: 14pt)[#title]
+    #v(1pt)
+    #body
+  ]
+  #grid(columns: (1fr, 1fr), gutter: 12pt)[
+    #feat(accent, "ペルソナ切り替え（6種）")[
+      お姉ちゃん・知的・幼児・ツンデレ・先生・大人なお姉さん。切り替えと同時に会話履歴をリセットし、システムプロンプトを差し替えることで人格を即座に変更できる。
+    ]
+    #v(7pt)
+    #feat(accent, "リアルタイム・リップシンク")[
+      マイク音声の RMS をフレームごとに計算し、VRM モデルの口形態素（`vrc.v_aa`）に lerp で追従。発話中は自然に口が動き、沈黙時は閉じる。
+    ]
+    #v(7pt)
+    #feat(accent2, "AI・人間シームレス切り替え")[
+      1人接続時は AI が応答。2人以上になると自動で人間同士の中継モードへ。STT → TTS を経由するため声質の差が吸収され、全員が統一アバター音声で届く。
+    ]
+  ][
+    #feat(accent2, "親密度システム")[
+      会話ターンごとに LLM が +1 / 0 / −1 を評価。Cookie に保存され次回も引き継がれる。5段階の関係性テキストをシステムプロンプトに付加し、キャラクターの態度がリアルタイムに変化する。
+    ]
+    #v(7pt)
+    #feat(rgb("#44ee88"), "AIモデル・音声モデルの切り替え")[
+      設定パネルから LLM モデル（gemma4 など）と TTS エンジン（VoiceVox / IrodoriTTS）をその場で変更可能。切り替えは即時反映され、次の発話から新しいモデルで応答する。
     ]
   ]
 ]
 
-// 11. LLM連携
-#slide("LLM 連携：ストリーミングとペルソナ")[
+// 12. まとめ
+#slide("Pure Dialogue が目指すもの")[
   #grid(columns: (1fr, 1fr), gutter: 16pt)[
     #card-box[
-      #text(fill: accent, weight: "bold")[ストリーミング応答]
-      #v(4pt)
+      #text(fill: accent, weight: "bold")[これは単なる「チャットツール」ではない]
+      #v(8pt)
       #set text(size: 16pt)
-      Ollama の NDJSON をトークン単位で受信
-
-      文末文字（`。！？` など）が来た時点で #linebreak()
-      その文を即 TTS へ送る
-
-      *→ 全文を待たずに音声が流れ始める*
-    ]
-    #v(8pt)
-    #card-box[
-      #text(fill: accent2, weight: "bold")[Tailscale + Cloudflare Tunnel]
+      声を奪われた人、#linebreak()
+      居場所を失った人が#linebreak()
+      社会と再接続するための#linebreak()
       #v(4pt)
-      #set text(size: 16pt)
-      WSL ↔ Windows は Tailscale VPN で接続 #linebreak()
-      Cloudflare Tunnel で `https://` 外部公開 #linebreak()
-      スマホからも `wss://` で接続可能
+      #text(size: 20pt, weight: "black", fill: accent)[*新しい福祉インフラ*]
     ]
-  ][
+    #v(10pt)
     #card-box[
-      #text(fill: accent, weight: "bold")[ペルソナシステム（6種）]
+      #text(fill: accent2, weight: "bold")[今後の展望]
       #v(4pt)
       #set text(size: 15pt)
-      - お姉ちゃん（語尾「にゃん」）
-      - 知的 / 幼児 / ツンデレ / 先生 / 大人なお姉さん
-
-      切り替え時は会話履歴をリセット #linebreak()
-      → システムプロンプトを差し替え
-    ]
-    #v(8pt)
-    #card-box[
-      #text(fill: accent2, weight: "bold")[親密度の態度反映]
-      #v(4pt)
-      #set text(size: 15pt)
-      システムプロンプトに関係性テキストを付加
-
-      #text(fill: muted)[例：「最高の仲良し。溺愛していて #linebreak()
-      ものすごく甘えて愛情を全開に…」]
-    ]
-  ]
-]
-
-// 12. 3Dフロントエンド
-#slide("3D フロントエンド：VRM と詰まった点")[
-  #grid(columns: (1fr, 1fr), gutter: 16pt)[
-    #card-box[
-      #text(fill: accent, weight: "bold")[Three.js + pixiv/three-vrm]
-      #v(4pt)
-      #set text(size: 15pt)
-      CDN の ESM のみ → ビルドツール不要
-      - リップシンク：RMS → `vrc.v_aa` モーフ
-      - 瞬き：ランダムタイマーで `eye_blink`
-      - 腕・体幹：正弦波でゆらゆら
-      - キャンディゴースト：円軌道で周回
-      - 泡パーティクル：InstancedMesh 90個
-    ]
-  ][
-    #card-box[
-      #text(fill: accent, weight: "bold")[詰まった点①：表情が動かない]
-      #v(4pt)
-      #set text(size: 15pt)
-      VRM 1.0 だが表情定義が空 #linebreak()
-      → `expressionManager` が null
-
-      *解決*：`morphTargetDictionary` を traverse #linebreak()
-      して `morphTargetInfluences` を直接操作
-    ]
-    #v(8pt)
-    #card-box[
-      #text(fill: accent2, weight: "bold")[詰まった点②：ゴーストが動かない]
-      #v(4pt)
-      #set text(size: 15pt)
-      Spring bone が毎フレーム位置を上書き
-
-      *解決*：VRM シーンから切り離して #linebreak()
-      Three.js シーンに直接 add
-    ]
-  ]
-]
-
-// 13. 親密度システム
-#slide("親密度システム")[
-  #grid(columns: (1fr, 1fr), gutter: 16pt)[
-    #v(4pt)
-    会話のたびに LLM が評価して関係性が変化
-
-    #v(8pt)
-    #card-box[
-      #text(fill: accent, weight: "bold")[評価フロー]
-      #v(4pt)
-      #set text(size: 16pt)
-      + 応答完了後、同モデルに会話 1 ターンを評価
-      + *+1 / 0 / −1* を WebSocket で返送
-      + Cookie に保存（365 日）→ 次回接続時も継続
-      + システムプロンプトに即時反映
-    ]
-    #v(8pt)
-    #card-box[
-      #text(fill: accent2, weight: "bold")[5 段階の態度変化]
-      #v(4pt)
-      #set text(size: 15pt)
-      0〜20：余所余所しい　/　21〜40：普通#linebreak()
-      41〜60：親しみ　/　61〜80：温かく甘える#linebreak()
-      81〜100：愛情全開
+      - 文章から感情・表情の モデル反映
+      - 長期記憶（会話サマリー永続化）
     ]
   ][
     #align(center + horizon)[
-      #image("fig/affinity.png", width: 55%)
-      #v(6pt)
-      #text(fill: muted, size: 13pt)[
-        画面左の縦型ゲージ #linebreak()
-        上昇時にハートエフェクト
+      #v(10pt)
+      #text(size: 22pt, weight: "black")[
+        AI だと思って話していたら、#linebreak()
+        #v(6pt)
+        #text(fill: accent)[いつの間にか]#linebreak()
+        世界と繋がっていた。
+      ]
+      #v(20pt)
+      #text(fill: muted, size: 15pt)[
+        だれでも、だれとでも、対等に。
       ]
     ]
   ]
 ]
 
-// 14. 工夫まとめ
-#slide("工夫・苦労した点まとめ")[
-  #set text(size: 15pt)
-  #grid(columns: (1fr, 1fr), gutter: 12pt)[
-    #card-box[
-      #text(fill: accent, weight: "bold", size: 16pt)[音声ストリーミング再生]
-      #v(4pt)
-      LLM の文末トークンをトリガーに TTS → WAV → 即再生 #linebreak()
-      全文を待たないため *体感速度が大幅に向上*
-    ]
-    #v(8pt)
-    #card-box[
-      #text(fill: accent, weight: "bold", size: 16pt)[WebM ヘッダー設計]
-      #v(4pt)
-      `processing` フラグで送信を制御 #linebreak()
-      `done → start()` の順序を厳守 #linebreak()
-      → ヘッダー欠損問題を完全解消
-    ]
-  ][
-    #card-box[
-      #text(fill: accent2, weight: "bold", size: 16pt)[AudioContext 制限対策]
-      #v(4pt)
-      Autoplay Policy で AudioContext が `suspended` #linebreak()
-      クリック/タッチの capture フェーズで `resume()`
-    ]
-    #v(8pt)
-    #card-box[
-      #text(fill: accent2, weight: "bold", size: 16pt)[Whisper ハルシネーション]
-      #v(4pt)
-      無音時に決まり文句が出力される known issue #linebreak()
-      頻出パターンをフィルタリストでブロック
-    ]
-  ]
-]
-
-// 15. まとめ
-#slide("まとめと今後の展望")[
-  #grid(columns: (1fr, 1fr), gutter: 16pt)[
-    #card-box[
-      #text(fill: accent, weight: "bold")[作ったもの]
-      #v(4pt)
-      #set text(size: 16pt)
-      - ブラウザだけで動く音声会話 AI
-      - ビルド不要・単一 HTML で完結
-      - 外部 GPU マシンを Tailscale で活用
-      - 親密度による動的な態度変化
-      - スマホからも HTTPS でアクセス可
-    ]
-    #v(8pt)
-    #card-box[
-      #text(fill: accent, weight: "bold")[技術的な学び]
-      #v(4pt)
-      #set text(size: 16pt)
-      音声・LLM・3D・WebSocket を組み合わせる際の *タイミング制御* の難しさ #linebreak()
-      ブラウザの制約を一つずつ潰していく過程
-    ]
-  ][
-    #card-box[
-      #text(fill: accent2, weight: "bold")[今後やりたいこと]
-      #v(4pt)
-      #set text(size: 16pt)
-      - 感情表現（表情・ジェスチャー）の LLM 連動
-      - 長期記憶（会話サマリーの永続化）
-      - より自然な間・相槌
-      - マルチモーダル入力（カメラ・画像）
-      - モデルのファインチューニング
-    ]
-  ]
-]
-
-// 16. 終わり
+// 10. 終わり
 #end-slide("ご清聴ありがとうございました")[
-  #v(14pt)
+  #v(10pt)
+  #text(size: 20pt, weight: "black")[
+    だれでも、だれとでも、対等に。
+  ]
+  #v(16pt)
   #text(fill: muted, size: 17pt)[
     デモ：#link("https://talk.utyujin.com")[talk.utyujin.com]
   ]
